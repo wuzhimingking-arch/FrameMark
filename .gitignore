@@ -1,0 +1,11 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/binaries/*.exe
+src-tauri/resources/*.ttf
+src-tauri/resources/ffmpeg-license/
+*.sqlite3
+*.log
+.idea/
+*.iml
+

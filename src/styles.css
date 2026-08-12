@@ -1,0 +1,11 @@
+:root {
+  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  color: #e2e8f0;
+  background: #0f172a;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+.splash { min-height: 100vh; display: grid; place-content: center; text-align: center; }
+.brand { font-size: 3rem; font-weight: 750; letter-spacing: .12em; }
+.splash p { color: #94a3b8; }
