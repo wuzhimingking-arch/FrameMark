@@ -34,6 +34,16 @@
 - 已安装程序可启动；NSIS 卸载退出码 0，安装目录及卸载注册表项清除。
 - 安装包：`帧印_1.0.0_x64-setup.exe`，约 62.9 MiB。
 
+### 1.0.1 Windows 依赖修复验证
+
+- Windows 目标由 `x86_64-pc-windows-gnullvm` 改为官方 MSVC ABI；PE 导入审计确认 `frame-mark.exe` 不再导入 `WebView2Loader.dll` 或 `libunwind.dll`。
+- 同时审计 `frame-mark.exe`、`ffmpeg.exe`、`ffprobe.exe`：除 Windows 系统 DLL/API Set 外没有未随安装包提供的动态库。
+- NSIS 配置为 `embedBootstrapper`；构建时下载并内嵌微软 WebView2 Evergreen Bootstrapper，安装脚本先检测已安装 Runtime，缺失时静默安装。
+- 将正式安装包复制到随机临时目录，静默安装到独立目录；仅保留 `System32` 与 Windows 根目录的 PATH 后，从正式安装目录启动，窗口标题 `帧印` 正常出现。
+- 已验证开始菜单快捷方式、FFmpeg/ffprobe、字体、许可证和卸载程序均存在；静默卸载后安装目录清理完成。
+- 本机已有 WebView2 Runtime `151.0.4129.78`，因此未破坏性卸载共享 Runtime；缺失 Runtime 分支通过生成的 NSIS 安装逻辑和内嵌 Bootstrapper 配置验证。
+- 安装包：`帧印_1.0.1_x64-setup.exe`，67,447,460 字节；SHA-256：`0720D7E626DDFAA61DB3CCC481CA781E5B2BE868C571A149979C598F63432B99`。
+
 ## 未覆盖范围
 
 - 未在独立 Windows 10 与 macOS 机器执行安装和处理。

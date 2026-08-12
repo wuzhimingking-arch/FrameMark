@@ -20,6 +20,8 @@
 - Rust 代码用 `cargo fmt`；核心随机算法必须有自动化测试。
 - 前端提交前运行 `npm run build`，后端运行 `cargo test`。
 - 视频处理变更需用真实样本验证 ffprobe 信息、音频、方向、时长与严格单帧。
+- Windows 正式发行固定使用 `x86_64-pc-windows-msvc` 与 NSIS 安装包；不得把 `target` 中的裸 EXE 当作交付物。
+- Windows 安装包必须内嵌 WebView2 Bootstrapper，发布前运行 `npm run verify:windows` 审计动态库并从独立安装目录启动。
 - 中文文件通过 PowerShell 读取时显式使用 UTF-8；不要因终端乱码重写源码。
 
 ## 版本、文档与 Git
@@ -28,4 +30,3 @@
 - 项目事实变化时更新 `docs/PROJECT_CONTEXT.md`；每个独立任务追加 `docs/DEV_LOG.md`。
 - 每阶段只暂存本任务文件并使用具体中文提交信息；不提交密钥、Token、keystore、`local.properties`。
 - 未明确要求时不 push、不创建 GitHub 仓库、不生成 APK/AAB。
-

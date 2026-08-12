@@ -1,14 +1,15 @@
 {
   "name": "shuiyin-gongju",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "prepare:assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-assets.ps1",
     "tauri": "tauri",
-    "tauri:build": "npm run prepare:assets && tauri build"
+    "tauri:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
+    "verify:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-windows-release.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

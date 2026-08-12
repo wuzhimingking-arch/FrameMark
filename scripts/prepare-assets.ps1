@@ -1,37 +1,40 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $assetTemp = Join-Path ([System.IO.Path]::GetTempPath()) 'framemark-release-assets'
 $binaryDir = Join-Path $projectRoot 'src-tauri\binaries'
 $resourceDir = Join-Path $projectRoot 'src-tauri\resources'
-$targets = 'x86_64-pc-windows-msvc', 'x86_64-pc-windows-gnullvm'
+$target = 'x86_64-pc-windows-msvc'
 
 New-Item -ItemType Directory -Force -Path $assetTemp, $binaryDir, $resourceDir | Out-Null
 
-$ffmpegZip = Join-Path $assetTemp 'ffmpeg-release-essentials.zip'
-if (-not (Test-Path $ffmpegZip) -or (Get-Item $ffmpegZip).Length -lt 50MB) {
-    curl.exe -L --fail --retry 5 --retry-delay 3 -o $ffmpegZip 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
-}
-
+$ffmpegTarget = Join-Path $binaryDir "ffmpeg-$target.exe"
+$ffprobeTarget = Join-Path $binaryDir "ffprobe-$target.exe"
 $ffmpegDir = Join-Path $assetTemp 'ffmpeg'
-if (-not (Test-Path $ffmpegDir)) {
-    Expand-Archive -LiteralPath $ffmpegZip -DestinationPath $ffmpegDir
-}
-
-foreach ($name in 'ffmpeg', 'ffprobe') {
-    $source = Get-ChildItem -LiteralPath $ffmpegDir -Recurse -Filter "$name.exe" | Select-Object -First 1
-    if (-not $source) { throw "FFmpeg 发行包缺少 $name.exe" }
-    foreach ($target in $targets) {
+if (-not (Test-Path $ffmpegTarget) -or (Get-Item $ffmpegTarget).Length -lt 50MB -or -not (Test-Path $ffprobeTarget)) {
+    $ffmpegZip = Join-Path $assetTemp 'ffmpeg-release-essentials.zip'
+    if (-not (Test-Path $ffmpegZip) -or (Get-Item $ffmpegZip).Length -lt 50MB) {
+        curl.exe -L --fail --retry 5 --retry-delay 3 -o $ffmpegZip 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
+    }
+    if (-not (Test-Path $ffmpegDir)) {
+        Expand-Archive -LiteralPath $ffmpegZip -DestinationPath $ffmpegDir
+    }
+    foreach ($name in 'ffmpeg', 'ffprobe') {
+        $source = Get-ChildItem -LiteralPath $ffmpegDir -Recurse -Filter "$name.exe" | Select-Object -First 1
+        if (-not $source) { throw "FFmpeg 发行包缺少 $name.exe" }
         Copy-Item -LiteralPath $source.FullName -Destination (Join-Path $binaryDir "$name-$target.exe") -Force
     }
 }
 
 $licenseDir = Join-Path $resourceDir 'licenses'
 New-Item -ItemType Directory -Force -Path $licenseDir | Out-Null
-$ffmpegLicense = Get-ChildItem -LiteralPath $ffmpegDir -Recurse -Filter 'LICENSE' | Select-Object -First 1
-if (-not $ffmpegLicense) { throw 'FFmpeg 发行包缺少 GPL 许可证文本' }
-Copy-Item -LiteralPath $ffmpegLicense.FullName -Destination (Join-Path $licenseDir 'FFmpeg-GPLv3.txt') -Force
+$ffmpegLicenseTarget = Join-Path $licenseDir 'FFmpeg-GPLv3.txt'
+if (-not (Test-Path $ffmpegLicenseTarget)) {
+    $ffmpegLicense = Get-ChildItem -LiteralPath $ffmpegDir -Recurse -Filter 'LICENSE' | Select-Object -First 1
+    if (-not $ffmpegLicense) { throw 'FFmpeg 发行包缺少 GPL 许可证文本' }
+    Copy-Item -LiteralPath $ffmpegLicense.FullName -Destination $ffmpegLicenseTarget -Force
+}
 
 $font = Join-Path $resourceDir 'NotoSansSC-Regular.ttf'
 if (-not (Test-Path $font) -or (Get-Item $font).Length -lt 10MB) {

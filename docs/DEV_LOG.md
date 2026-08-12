@@ -24,3 +24,12 @@
 - 测试：release 程序成功启动，主窗口响应正常；内置 ffmpeg/ffprobe、字体和 GPL/OFL 文本位于发行资源中；NSIS 静默安装、已安装程序启动及静默卸载均通过。
 - 视频矩阵：合成并处理 1080p30、4K60、1080×1920 竖屏、30 分钟、VFR 和 90° Rotation Metadata 样本；输出几何、时长、VFR 时间戳和方向均通过。
 - 已知限制：未在本轮具备的独立 Windows 10 与 macOS 机器上验证；30 分钟和 4K 用合成样本验证处理正确性，不代表复杂内容的最终性能基准。
+
+## 2026-08-13 · 1.0.1
+
+- 需求：修复正式 Windows 程序启动时报 `WebView2Loader.dll` 缺失，并检查其他发行依赖。
+- 根因：项目把 Windows 默认构建目标强制为 `gnullvm`；该 ABI 的 `webview2-com-sys` 动态导入 `WebView2Loader.dll`，同时程序依赖 `libunwind.dll`。构建目录虽有 Loader，但复制裸 `frame-mark.exe` 时遗漏依赖，且裸 EXE 被误当成发行物。
+- 修改：移除全局 gnullvm 目标，Windows 发行统一改为 `x86_64-pc-windows-msvc`；新增一键构建脚本和发行验证脚本，`artifacts/windows` 只输出正式 NSIS 安装包，并与 Vite 的 `dist` 前端目录隔离。
+- WebView2：NSIS 改为内嵌微软 Evergreen Bootstrapper，安装时检测 Runtime，缺失时由 Bootstrapper 安装；不向系统目录手工复制 DLL。
+- 依赖：安装包继续包含 FFmpeg、ffprobe、Noto Sans SC 和许可证；PE 审计同时覆盖三个 EXE，拒绝 WebView2Loader、libunwind、GNU/VC++ 外置运行库和其他非系统 DLL。
+- 测试：TypeScript/Vite 构建通过；MSVC Windows 测试程序 7 项通过；1.0.1 安装包在临时副本、独立安装目录和最小 PATH 下启动主界面成功，开始菜单、资源、卸载均通过。

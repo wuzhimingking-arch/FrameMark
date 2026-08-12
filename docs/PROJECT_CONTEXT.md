@@ -6,7 +6,7 @@
 
 ## 当前版本
 
-- 版本：1.0.0（Windows x64 V1）
+- 版本：1.0.1（Windows x64 V1）
 - 目标：Windows 10/11 x64，架构兼容后续 macOS。
 
 ## 核心架构
@@ -15,6 +15,7 @@
 - 原生 TypeScript/HTML/CSS 实现三页界面，避免无必要 UI 框架。
 - Rust 负责 ffprobe/FFmpeg、确定性随机布局、SQLite、任务生命周期和文件安全。
 - FFmpeg、ffprobe 与 Noto Sans SC 字体作为安装资源分发。
+- Windows 正式发行使用 MSVC 目标，WebView2 Loader 静态链接；NSIS 内嵌微软 Evergreen Bootstrapper，在缺少 WebView2 Runtime 时检测并安装。
 
 ## 已实现功能
 
@@ -31,3 +32,4 @@
 - V1 输出固定为高质量 H.264；H.265 可作为输入但会转 H.264。
 - HDR 会在处理前明确警告，当前不保证 HDR 色彩保持；不支持 Dolby Vision 无损保留。
 - 不提供硬件编码、图片 Logo、AI 检测或联网功能。
+- WebView2 Runtime 缺失时，内嵌 Bootstrapper 仍需联网获取微软 Evergreen Runtime；应用本身不依赖 Node、Rust、Visual Studio 或项目目录。
