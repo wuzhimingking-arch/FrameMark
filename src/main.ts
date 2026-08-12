@@ -46,7 +46,7 @@ function shell(content: string) {
           <button class="nav-item ${route === "settings" ? "active" : ""}" data-route="settings"><span>⚙</span>设置</button>
         </nav>
         <div class="privacy"><span>●</span><div><strong>100% 本地处理</strong><small>原视频不离开你的电脑</small></div></div>
-        <div class="version">V0.9.0</div>
+        <div class="version">V1.0.0</div>
       </aside>
       <main class="content">${content}</main>
     </div>
@@ -280,7 +280,7 @@ function renderSettings() {
       <div class="form-grid"><label>默认间隔（秒）<input name="interval" type="number" min="0.5" max="60" step="0.1" value="${data.settings.interval}"></label><label>默认字体大小<select name="fontSize"><option value="small">小</option><option value="medium">中</option><option value="large">大</option></select></label><label>默认透明度（%）<input name="opacity" type="number" min="20" max="100" value="${data.settings.opacity * 100}"></label><label>安全边距（%）<input name="safeMargin" type="number" min="2" max="20" value="${data.settings.safeMargin * 100}"></label></div>
       <label class="switch-line"><input name="randomOpacity" type="checkbox" ${data.settings.randomOpacity ? "checked" : ""}> 默认开启随机透明度</label><label class="switch-line"><input name="randomSize" type="checkbox" ${data.settings.randomSize ? "checked" : ""}> 默认开启随机大小</label>
       <div class="output-setting"><span>默认输出目录</span><button id="settings-output" type="button" class="path-button">${html(data.settings.outputDir || "原视频目录")}</button></div><button class="primary" type="submit">保存默认设置</button>
-    </form><section class="card settings-card about-card"><h2>隐私与日志</h2><p>视频、截图、平台 ID 和历史记录均不会上传。运行日志仅保存在本机。</p><button id="open-logs" class="secondary">打开日志目录</button><div class="about-line"><span>帧印</span><strong>V0.9.0</strong></div></section></div>`);
+    </form><section class="card settings-card about-card"><h2>隐私与日志</h2><p>视频、截图、平台 ID 和历史记录均不会上传。运行日志仅保存在本机。</p><button id="open-logs" class="secondary">打开日志目录</button><div class="about-line"><span>帧印</span><strong>V1.0.0</strong></div></section></div>`);
   const fontSelect = document.querySelector<HTMLSelectElement>("[name=fontSize]"); if (fontSelect) fontSelect.value = data.settings.fontSize;
   bindSettings();
 }

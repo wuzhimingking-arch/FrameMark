@@ -27,9 +27,19 @@ foreach ($name in 'ffmpeg', 'ffprobe') {
     }
 }
 
+$licenseDir = Join-Path $resourceDir 'licenses'
+New-Item -ItemType Directory -Force -Path $licenseDir | Out-Null
+$ffmpegLicense = Get-ChildItem -LiteralPath $ffmpegDir -Recurse -Filter 'LICENSE' | Select-Object -First 1
+if (-not $ffmpegLicense) { throw 'FFmpeg 发行包缺少 GPL 许可证文本' }
+Copy-Item -LiteralPath $ffmpegLicense.FullName -Destination (Join-Path $licenseDir 'FFmpeg-GPLv3.txt') -Force
+
 $font = Join-Path $resourceDir 'NotoSansSC-Regular.ttf'
 if (-not (Test-Path $font) -or (Get-Item $font).Length -lt 10MB) {
     curl.exe -L --fail --retry 5 -o $font 'https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf'
+}
+$fontLicense = Join-Path $licenseDir 'Noto-OFL.txt'
+if (-not (Test-Path $fontLicense)) {
+    curl.exe -L --fail --retry 5 -o $fontLicense 'https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/LICENSE'
 }
 
 Write-Host 'Windows x64 FFmpeg sidecar 与 Noto Sans SC 字体已准备完成。'

@@ -641,6 +641,201 @@ mod tests {
         fs::remove_dir_all(temp).unwrap();
     }
 
+    #[test]
+    fn synthetic_video_matrix_keeps_geometry_vfr_rotation_and_long_duration() {
+        let tools = test_tools();
+        let temp =
+            std::env::temp_dir().join(format!("framemark-matrix-{}", crate::layout::new_seed()));
+        fs::create_dir_all(&temp).unwrap();
+        let cases = [
+            (
+                "1080p30.mp4",
+                "color=c=navy:s=1920x1080:r=30:d=1",
+                1920,
+                1080,
+                0.5,
+            ),
+            (
+                "4k60.mp4",
+                "color=c=navy:s=3840x2160:r=60:d=0.25",
+                3840,
+                2160,
+                0.5,
+            ),
+            (
+                "vertical.mp4",
+                "color=c=navy:s=1080x1920:r=30:d=1",
+                1080,
+                1920,
+                0.5,
+            ),
+            (
+                "long-30min.mp4",
+                "color=c=navy:s=160x96:r=1:d=1800",
+                160,
+                96,
+                60.0,
+            ),
+        ];
+        for (name, source, width, height, interval) in cases {
+            let input = temp.join(name);
+            assert!(Command::new(&tools.ffmpeg)
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    source,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-pix_fmt",
+                    "yuv420p"
+                ])
+                .arg(&input)
+                .output()
+                .unwrap()
+                .status
+                .success());
+            let job = process_test_case(&tools, &input, &temp, interval, 900 + width as u64);
+            let output_info = inspect(&tools, &job.partial_output).unwrap();
+            assert_eq!((output_info.width, output_info.height), (width, height));
+            assert!((output_info.duration - job.media.duration).abs() < 0.25);
+            cleanup(&job);
+        }
+
+        let vfr = temp.join("vfr.mp4");
+        assert!(Command::new(&tools.ffmpeg)
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=s=640x360:r=30:d=2",
+                "-vf",
+                "select='if(lt(t,1),not(mod(n,3)),1)'",
+                "-fps_mode",
+                "vfr",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast"
+            ])
+            .arg(&vfr)
+            .output()
+            .unwrap()
+            .status
+            .success());
+        let input_times = frame_times(&tools, &vfr);
+        let vfr_job = process_test_case(&tools, &vfr, &temp, 0.5, 8080);
+        let output_times = frame_times(&tools, &vfr_job.partial_output);
+        assert_eq!(input_times.len(), output_times.len());
+        assert!(input_times
+            .iter()
+            .zip(output_times)
+            .all(|(a, b)| (a - b).abs() < 0.002));
+        cleanup(&vfr_job);
+
+        let base = temp.join("rotation-base.mp4");
+        let rotated = temp.join("rotation-90.mp4");
+        assert!(Command::new(&tools.ffmpeg)
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=navy:s=640x360:r=30:d=1",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast"
+            ])
+            .arg(&base)
+            .output()
+            .unwrap()
+            .status
+            .success());
+        assert!(Command::new(&tools.ffmpeg)
+            .args(["-y", "-display_rotation", "90", "-i"])
+            .arg(&base)
+            .args(["-c", "copy"])
+            .arg(&rotated)
+            .output()
+            .unwrap()
+            .status
+            .success());
+        let rotation_info = inspect(&tools, &rotated).unwrap();
+        assert_eq!(rotation_info.rotation.abs(), 90);
+        assert_eq!((rotation_info.width, rotation_info.height), (360, 640));
+        let rotation_job = process_test_case(&tools, &rotated, &temp, 0.5, 9090);
+        let rotation_output = inspect(&tools, &rotation_job.partial_output).unwrap();
+        assert_eq!(
+            (
+                rotation_output.width,
+                rotation_output.height,
+                rotation_output.rotation
+            ),
+            (360, 640, 0)
+        );
+        cleanup(&rotation_job);
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    fn process_test_case(
+        tools: &Tools,
+        input: &Path,
+        output_dir: &Path,
+        interval: f64,
+        seed: u64,
+    ) -> PreparedJob {
+        let request = ProcessRequest {
+            input_path: input.to_string_lossy().into_owned(),
+            output_dir: output_dir.to_string_lossy().into_owned(),
+            identity_id: 1,
+            interval,
+            opacity: 1.0,
+            font_size: "small".into(),
+            color: "white".into(),
+            background: false,
+            random_opacity: false,
+            random_size: false,
+            safe_margin: 0.02,
+        };
+        let job = prepare(tools, &request, "ID1", seed).unwrap();
+        let result = ffmpeg_command(tools, input, &job).output().unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        validate_output(tools, &job.media, &job.partial_output).unwrap();
+        job
+    }
+
+    fn frame_times(tools: &Tools, input: &Path) -> Vec<f64> {
+        let output = Command::new(&tools.ffprobe)
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_frames",
+                "-show_entries",
+                "frame=best_effort_timestamp_time",
+                "-of",
+                "csv=p=0",
+            ])
+            .arg(input)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| line.trim_end_matches(',').parse().ok())
+            .collect()
+    }
+
     fn test_tools() -> Tools {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let triple = option_env!("TAURI_ENV_TARGET_TRIPLE").unwrap_or("x86_64-pc-windows-gnullvm");

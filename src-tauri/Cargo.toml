@@ -1,6 +1,6 @@
 [package]
 name = "frame-mark"
-version = "0.9.0"
+version = "1.0.0"
 description = "随机单帧视频版权水印工具"
 authors = ["FrameMark"]
 edition = "2021"

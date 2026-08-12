@@ -4,7 +4,6 @@ src-tauri/target/
 src-tauri/gen/
 src-tauri/binaries/*.exe
 src-tauri/resources/*.ttf
-src-tauri/resources/ffmpeg-license/
 *.sqlite3
 *.log
 .vite-*.log
