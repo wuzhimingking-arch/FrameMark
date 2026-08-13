@@ -19,6 +19,12 @@ pub struct Settings {
     pub random_opacity: bool,
     pub random_size: bool,
     pub safe_margin: f64,
+    #[serde(default = "default_encoder")]
+    pub encoder: String,
+}
+
+fn default_encoder() -> String {
+    "auto".into()
 }
 
 impl Default for Settings {
@@ -31,6 +37,7 @@ impl Default for Settings {
             random_opacity: false,
             random_size: false,
             safe_margin: 0.05,
+            encoder: default_encoder(),
         }
     }
 }
@@ -68,6 +75,8 @@ pub struct ProcessRequest {
     pub random_opacity: bool,
     pub random_size: bool,
     pub safe_margin: f64,
+    #[serde(default = "default_encoder")]
+    pub encoder: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -126,6 +135,15 @@ pub struct Bootstrap {
     pub settings: Settings,
     pub histories: Vec<HistorySummary>,
     pub log_dir: String,
+    pub encoding_options: Vec<EncodingOption>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EncodingOption {
+    pub id: String,
+    pub label: String,
+    pub available: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -144,4 +162,5 @@ pub struct ProcessResult {
     pub output_path: String,
     pub watermark_count: usize,
     pub seed: String,
+    pub encoder_label: String,
 }

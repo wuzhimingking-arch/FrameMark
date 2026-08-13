@@ -11,6 +11,9 @@ $appExe = Join-Path $releaseDir 'frame-mark.exe'
 $readobj = Get-Command llvm-readobj.exe -ErrorAction SilentlyContinue
 if (-not $readobj) { throw '缺少 llvm-readobj.exe，无法审计发行程序动态依赖' }
 if (-not (Test-Path -LiteralPath $installer)) { throw "安装包不存在：$installer" }
+if (-not (Test-Path -LiteralPath $appExe)) { throw "发行目录缺少：$appExe" }
+$headers = @(& $readobj.Source --file-headers $appExe)
+if (-not ($headers -match 'IMAGE_SUBSYSTEM_WINDOWS_GUI')) { throw 'frame-mark.exe 未使用 Windows GUI 子系统，会显示伴生控制台窗口' }
 
 $forbiddenNames = 'webview2loader.dll', 'libunwind.dll', 'libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'vcruntime140.dll', 'msvcp140.dll'
 $audits = @{}
@@ -69,6 +72,7 @@ try {
     if (Test-Path -LiteralPath $installDir) { throw '卸载后安装目录仍存在' }
 
     Write-Host "frame-mark.exe 动态依赖审计通过：$($audits['frame-mark.exe'] -join ', ')"
+    Write-Host 'frame-mark.exe Windows GUI 子系统审计通过。'
     Write-Host "NSIS WebView2 安装模式：$mode"
     Write-Host '安装包副本、干净 PATH、独立临时安装目录启动验证通过。'
 } finally {

@@ -146,6 +146,12 @@ pub fn validate_settings(value: &Settings) -> Result<(), String> {
     if !matches!(value.font_size.as_str(), "small" | "medium" | "large") {
         return Err("字号设置无效".into());
     }
+    if !matches!(
+        value.encoder.as_str(),
+        "auto" | "nvenc" | "qsv" | "amf" | "videotoolbox" | "cpu"
+    ) {
+        return Err("视频编码加速设置无效".into());
+    }
     Ok(())
 }
 

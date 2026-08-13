@@ -1,10 +1,45 @@
 use crate::layout::{build_layout, choose_frames, FramePoint, SplitMix64};
-use crate::models::{MediaInfo, ProcessRequest, Watermark};
+use crate::models::{EncodingOption, MediaInfo, ProcessRequest, Watermark};
 use serde_json::Value;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+#[derive(Clone, Copy)]
+pub struct VideoEncoder {
+    pub id: &'static str,
+    pub label: &'static str,
+}
+
+const CPU_ENCODER: VideoEncoder = VideoEncoder {
+    id: "cpu",
+    label: "CPU（libx264）",
+};
+const GPU_ENCODERS: [VideoEncoder; 4] = [
+    VideoEncoder {
+        id: "nvenc",
+        label: "NVIDIA NVENC",
+    },
+    VideoEncoder {
+        id: "qsv",
+        label: "Intel Quick Sync",
+    },
+    VideoEncoder {
+        id: "amf",
+        label: "AMD AMF",
+    },
+    VideoEncoder {
+        id: "videotoolbox",
+        label: "Apple VideoToolbox",
+    },
+];
 
 #[derive(Clone)]
 pub struct Tools {
@@ -24,6 +59,94 @@ pub struct PreparedJob {
     pub copy_audio: bool,
 }
 
+pub fn detection_options(tools: &Tools) -> Vec<EncodingOption> {
+    let listed = new_command(&tools.ffmpeg)
+        .args(["-hide_banner", "-encoders"])
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+        .unwrap_or_default();
+    let mut options = vec![EncodingOption {
+        id: "auto".into(),
+        label: "自动（优先 GPU）".into(),
+        available: true,
+    }];
+    for encoder in GPU_ENCODERS {
+        let available = listed.contains(h264_name(encoder.id)) && encoder_works(tools, encoder);
+        options.push(EncodingOption {
+            id: encoder.id.into(),
+            label: encoder.label.into(),
+            available,
+        });
+    }
+    options.push(EncodingOption {
+        id: CPU_ENCODER.id.into(),
+        label: "CPU（软件编码）".into(),
+        available: true,
+    });
+    options
+}
+
+pub fn encoding_attempts(requested: &str, options: &[EncodingOption]) -> Vec<VideoEncoder> {
+    let available = |id: &str| {
+        options
+            .iter()
+            .any(|option| option.id == id && option.available)
+    };
+    let selected = if requested == "auto" {
+        GPU_ENCODERS
+            .into_iter()
+            .find(|encoder| available(encoder.id))
+    } else {
+        GPU_ENCODERS
+            .into_iter()
+            .find(|encoder| encoder.id == requested && available(encoder.id))
+    };
+    selected
+        .into_iter()
+        .chain(std::iter::once(CPU_ENCODER))
+        .collect()
+}
+
+fn h264_name(id: &str) -> &'static str {
+    match id {
+        "nvenc" => "h264_nvenc",
+        "qsv" => "h264_qsv",
+        "amf" => "h264_amf",
+        "videotoolbox" => "h264_videotoolbox",
+        _ => "libx264",
+    }
+}
+
+fn encoder_works(tools: &Tools, encoder: VideoEncoder) -> bool {
+    new_command(&tools.ffmpeg)
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=black:s=320x240:r=1",
+            "-frames:v",
+            "1",
+            "-c:v",
+            h264_name(encoder.id),
+            "-f",
+            "null",
+            "-",
+        ])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn new_command(program: &Path) -> Command {
+    let mut command = Command::new(program);
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
 pub fn inspect(tools: &Tools, input: &Path) -> Result<MediaInfo, String> {
     if !input.is_file() {
         return Err("视频文件不存在或已被移动".into());
@@ -36,7 +159,7 @@ pub fn inspect(tools: &Tools, input: &Path) -> Result<MediaInfo, String> {
     if !matches!(extension.as_str(), "mp4" | "mov" | "mkv" | "webm") {
         return Err("当前仅支持 MP4、MOV、MKV 和 WebM 文件".into());
     }
-    let output = Command::new(&tools.ffprobe)
+    let output = new_command(&tools.ffprobe)
         .args([
             "-v",
             "error",
@@ -222,8 +345,18 @@ pub fn prepare(
     })
 }
 
+#[cfg(test)]
 pub fn ffmpeg_command(tools: &Tools, input: &Path, job: &PreparedJob) -> Command {
-    let mut command = Command::new(&tools.ffmpeg);
+    ffmpeg_command_with_encoder(tools, input, job, CPU_ENCODER)
+}
+
+pub fn ffmpeg_command_with_encoder(
+    tools: &Tools,
+    input: &Path,
+    job: &PreparedJob,
+    encoder: VideoEncoder,
+) -> Command {
+    let mut command = new_command(&tools.ffmpeg);
     command
         .args(["-y", "-hide_banner", "-nostdin", "-i"])
         .arg(input)
@@ -240,17 +373,12 @@ pub fn ffmpeg_command(tools: &Tools, input: &Path, job: &PreparedJob) -> Command
             "0",
             "-metadata:s:v:0",
             "rotate=0",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "slow",
-            "-crf",
-            "17",
             "-pix_fmt",
             "yuv420p",
             "-fps_mode",
             "passthrough",
         ]);
+    configure_encoder(&mut command, encoder);
     if job.copy_audio {
         command.args(["-c:a", "copy"]);
     } else if job.media.has_audio {
@@ -262,6 +390,49 @@ pub fn ffmpeg_command(tools: &Tools, input: &Path, job: &PreparedJob) -> Command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     command
+}
+
+fn configure_encoder(command: &mut Command, encoder: VideoEncoder) {
+    match encoder.id {
+        "nvenc" => {
+            command.args([
+                "-c:v",
+                "h264_nvenc",
+                "-preset",
+                "p5",
+                "-tune",
+                "hq",
+                "-rc",
+                "vbr",
+                "-cq",
+                "19",
+                "-b:v",
+                "0",
+            ]);
+        }
+        "qsv" => {
+            command.args([
+                "-c:v",
+                "h264_qsv",
+                "-preset",
+                "medium",
+                "-global_quality",
+                "20",
+            ]);
+        }
+        "amf" => {
+            command.args([
+                "-c:v", "h264_amf", "-quality", "quality", "-rc", "cqp", "-qp_i", "20", "-qp_p",
+                "22",
+            ]);
+        }
+        "videotoolbox" => {
+            command.args(["-c:v", "h264_videotoolbox", "-q:v", "60"]);
+        }
+        _ => {
+            command.args(["-c:v", "libx264", "-preset", "slow", "-crf", "17"]);
+        }
+    }
 }
 
 pub fn validate_output(tools: &Tools, input: &MediaInfo, output: &Path) -> Result<(), String> {
@@ -294,7 +465,7 @@ fn scan_frames(
 ) -> Result<Vec<Vec<FramePoint>>, String> {
     let count = (duration / interval).ceil().max(1.0) as usize;
     let mut groups = vec![Vec::new(); count];
-    let mut child = Command::new(&tools.ffprobe)
+    let mut child = new_command(&tools.ffprobe)
         .args([
             "-v",
             "error",
@@ -445,6 +616,12 @@ fn validate_request(request: &ProcessRequest) -> Result<(), String> {
     if !matches!(request.color.as_str(), "white" | "black") {
         return Err("文字颜色设置无效".into());
     }
+    if !matches!(
+        request.encoder.as_str(),
+        "auto" | "nvenc" | "qsv" | "amf" | "videotoolbox" | "cpu"
+    ) {
+        return Err("视频编码加速设置无效".into());
+    }
     Ok(())
 }
 
@@ -509,7 +686,7 @@ mod tests {
         ));
         fs::create_dir_all(&temp).unwrap();
         let input = temp.join("北京旅行 测试01.mp4");
-        let generated = Command::new(&tools.ffmpeg)
+        let generated = new_command(&tools.ffmpeg)
             .args([
                 "-y",
                 "-f",
@@ -553,6 +730,7 @@ mod tests {
             random_opacity: false,
             random_size: false,
             safe_margin: 0.05,
+            encoder: "cpu".into(),
         };
         let job = prepare(&tools, &request, "UID:12345678", 0xA42F72E19B30).unwrap();
         assert_eq!(job.watermarks.len(), 2);
@@ -564,7 +742,7 @@ mod tests {
         );
         validate_output(&tools, &job.media, &job.partial_output).unwrap();
 
-        let analyzed = Command::new(&tools.ffmpeg)
+        let analyzed = new_command(&tools.ffmpeg)
             .args(["-v", "error", "-i"])
             .arg(&job.partial_output)
             .args([
@@ -594,13 +772,129 @@ mod tests {
     }
 
     #[test]
+    fn hardware_encoder_keeps_single_frames_when_available() {
+        let tools = test_tools();
+        let option = detection_options(&tools).into_iter().find(|option| {
+            option.available
+                && matches!(option.id.as_str(), "nvenc" | "qsv" | "amf" | "videotoolbox")
+        });
+        let Some(option) = option else { return };
+        let encoder = encoding_attempts(&option.id, &[option.clone()])[0];
+        let temp =
+            std::env::temp_dir().join(format!("framemark-gpu-test-{}", crate::layout::new_seed()));
+        fs::create_dir_all(&temp).unwrap();
+        let input = temp.join("gpu-input.mp4");
+        assert!(new_command(&tools.ffmpeg)
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=320x240:r=10:d=5",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=5",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-c:a",
+                "aac",
+                "-shortest"
+            ])
+            .arg(&input)
+            .output()
+            .unwrap()
+            .status
+            .success());
+        let request = ProcessRequest {
+            input_path: input.to_string_lossy().into_owned(),
+            output_dir: temp.to_string_lossy().into_owned(),
+            identity_id: 1,
+            interval: 3.0,
+            opacity: 1.0,
+            font_size: "medium".into(),
+            color: "white".into(),
+            background: false,
+            random_opacity: false,
+            random_size: false,
+            safe_margin: 0.05,
+            encoder: option.id,
+        };
+        let job = prepare(&tools, &request, "GPU-UID", 0xA42F72E19B30).unwrap();
+        let output = ffmpeg_command_with_encoder(&tools, &input, &job, encoder)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        validate_output(&tools, &job.media, &job.partial_output).unwrap();
+        let input_times = frame_times(&tools, &input);
+        let output_times = frame_times(&tools, &job.partial_output);
+        assert_eq!(input_times.len(), output_times.len());
+        assert!(input_times
+            .iter()
+            .zip(output_times)
+            .all(|(a, b)| (a - b).abs() < 0.002));
+        let analyzed = new_command(&tools.ffmpeg)
+            .args(["-v", "error", "-i"])
+            .arg(&job.partial_output)
+            .args([
+                "-vf",
+                "signalstats,metadata=print:file=-",
+                "-an",
+                "-f",
+                "null",
+                "-",
+            ])
+            .output()
+            .unwrap();
+        assert!(analyzed.status.success());
+        let detected = bright_frames(&String::from_utf8_lossy(&analyzed.stdout));
+        let expected = job
+            .watermarks
+            .iter()
+            .map(|mark| mark.frame_index)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(detected, expected, "{} 路径必须严格单帧", encoder.label);
+        assert!(job.media.has_audio && inspect(&tools, &job.partial_output).unwrap().has_audio);
+        cleanup(&job);
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn unavailable_hardware_selection_falls_back_to_cpu() {
+        let options = vec![
+            EncodingOption {
+                id: "auto".into(),
+                label: "自动".into(),
+                available: true,
+            },
+            EncodingOption {
+                id: "nvenc".into(),
+                label: "NVIDIA NVENC".into(),
+                available: false,
+            },
+            EncodingOption {
+                id: "cpu".into(),
+                label: "CPU".into(),
+                available: true,
+            },
+        ];
+        assert_eq!(encoding_attempts("nvenc", &options)[0].id, "cpu");
+    }
+
+    #[test]
     fn cancellation_removes_partial_output() {
         let tools = test_tools();
         let temp =
             std::env::temp_dir().join(format!("framemark-cancel-{}", crate::layout::new_seed()));
         fs::create_dir_all(&temp).unwrap();
         let input = temp.join("cancel.mp4");
-        assert!(Command::new(&tools.ffmpeg)
+        assert!(new_command(&tools.ffmpeg)
             .args([
                 "-y",
                 "-f",
@@ -629,6 +923,7 @@ mod tests {
             random_opacity: false,
             random_size: false,
             safe_margin: 0.05,
+            encoder: "cpu".into(),
         };
         let job = prepare(&tools, &request, "@CancelTest", 123).unwrap();
         let mut child = ffmpeg_command(&tools, &input, &job).spawn().unwrap();
@@ -679,7 +974,7 @@ mod tests {
         ];
         for (name, source, width, height, interval) in cases {
             let input = temp.join(name);
-            assert!(Command::new(&tools.ffmpeg)
+            assert!(new_command(&tools.ffmpeg)
                 .args([
                     "-y",
                     "-f",
@@ -706,7 +1001,7 @@ mod tests {
         }
 
         let vfr = temp.join("vfr.mp4");
-        assert!(Command::new(&tools.ffmpeg)
+        assert!(new_command(&tools.ffmpeg)
             .args([
                 "-y",
                 "-f",
@@ -739,7 +1034,7 @@ mod tests {
 
         let base = temp.join("rotation-base.mp4");
         let rotated = temp.join("rotation-90.mp4");
-        assert!(Command::new(&tools.ffmpeg)
+        assert!(new_command(&tools.ffmpeg)
             .args([
                 "-y",
                 "-f",
@@ -756,7 +1051,7 @@ mod tests {
             .unwrap()
             .status
             .success());
-        assert!(Command::new(&tools.ffmpeg)
+        assert!(new_command(&tools.ffmpeg)
             .args(["-y", "-display_rotation", "90", "-i"])
             .arg(&base)
             .args(["-c", "copy"])
@@ -801,6 +1096,7 @@ mod tests {
             random_opacity: false,
             random_size: false,
             safe_margin: 0.02,
+            encoder: "cpu".into(),
         };
         let job = prepare(tools, &request, "ID1", seed).unwrap();
         let result = ffmpeg_command(tools, input, &job).output().unwrap();
@@ -814,7 +1110,7 @@ mod tests {
     }
 
     fn frame_times(tools: &Tools, input: &Path) -> Vec<f64> {
-        let output = Command::new(&tools.ffprobe)
+        let output = new_command(&tools.ffprobe)
             .args([
                 "-v",
                 "error",
@@ -832,13 +1128,13 @@ mod tests {
         assert!(output.status.success());
         String::from_utf8_lossy(&output.stdout)
             .lines()
-            .filter_map(|line| line.trim_end_matches(',').parse().ok())
+            .filter_map(|line| line.split(',').next()?.parse().ok())
             .collect()
     }
 
     fn test_tools() -> Tools {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let triple = option_env!("TAURI_ENV_TARGET_TRIPLE").unwrap_or("x86_64-pc-windows-gnullvm");
+        let triple = option_env!("TAURI_ENV_TARGET_TRIPLE").unwrap_or("x86_64-pc-windows-msvc");
         Tools {
             ffmpeg: manifest
                 .join("binaries")

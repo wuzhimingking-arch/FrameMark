@@ -23,6 +23,7 @@ struct AppState {
     db_path: PathBuf,
     log_dir: PathBuf,
     tools: Tools,
+    encoders: Vec<EncodingOption>,
     busy: AtomicBool,
     cancelled: AtomicBool,
     running: Mutex<Option<RunningProcess>>,
@@ -35,6 +36,7 @@ fn bootstrap(state: State<'_, AppState>) -> Result<Bootstrap, String> {
         settings: db::settings(&state.db_path)?,
         histories: db::histories(&state.db_path)?,
         log_dir: state.log_dir.to_string_lossy().into_owned(),
+        encoding_options: state.encoders.clone(),
     })
 }
 
@@ -134,57 +136,48 @@ fn run_process(app: &AppHandle, request: ProcessRequest) -> Result<ProcessResult
     );
     emit_progress(app, "正在生成版权标记……", 0.0, 0.0, job.media.duration);
 
-    let mut command = media::ffmpeg_command(&state.tools, Path::new(&request.input_path), &job);
-    let mut child = command.spawn().map_err(|e| {
-        media::cleanup(&job);
-        format!("FFmpeg 启动失败：{e}")
-    })?;
-    let stdout = child.stdout.take().ok_or_else(|| {
-        media::cleanup(&job);
-        "无法读取 FFmpeg 进度".to_string()
-    })?;
-    let mut stderr = child.stderr.take().ok_or("无法读取 FFmpeg 错误信息")?;
-    let child = Arc::new(Mutex::new(child));
-    *state.running.lock().unwrap_or_else(|e| e.into_inner()) = Some(RunningProcess {
-        child: child.clone(),
-        partial_output: job.partial_output.clone(),
-        temp_dir: job.temp_dir.clone(),
-    });
-    let error_reader = std::thread::spawn(move || {
-        let mut value = String::new();
-        let _ = stderr.read_to_string(&mut value);
-        value
-    });
-
-    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-        if let Some(value) = line.strip_prefix("out_time=").and_then(parse_ffmpeg_time) {
-            emit_progress(
-                app,
-                "正在生成版权标记……",
-                (value / job.media.duration * 100.0).clamp(0.0, 99.0),
-                value,
-                job.media.duration,
-            );
+    let attempts = media::encoding_attempts(&request.encoder, &state.encoders);
+    let mut selected = None;
+    let mut last_error = String::new();
+    for encoder in attempts {
+        emit_progress(
+            app,
+            &format!("视频编码：{}", encoder.label),
+            0.0,
+            0.0,
+            job.media.duration,
+        );
+        match run_ffmpeg(app, &state, Path::new(&request.input_path), &job, encoder) {
+            Ok(()) => {
+                selected = Some(encoder);
+                break;
+            }
+            Err(_) if state.cancelled.load(Ordering::Acquire) => {
+                media::cleanup(&job);
+                return Err("任务已取消".into());
+            }
+            Err(error) if encoder.id != "cpu" => {
+                last_error = error;
+                let _ = fs::remove_file(&job.partial_output);
+                log(
+                    &state.log_dir,
+                    &format!("{} 不可用，回退 CPU：{}", encoder.label, last_error),
+                );
+                emit_progress(
+                    app,
+                    "硬件编码初始化失败，正在回退 CPU……",
+                    0.0,
+                    0.0,
+                    job.media.duration,
+                );
+            }
+            Err(error) => {
+                media::cleanup(&job);
+                return Err(format!("视频编码失败：{error}"));
+            }
         }
     }
-    let status = child
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .wait()
-        .map_err(|e| format!("等待 FFmpeg 失败：{e}"))?;
-    let stderr = error_reader.join().unwrap_or_default();
-    *state.running.lock().unwrap_or_else(|e| e.into_inner()) = None;
-    if state.cancelled.load(Ordering::Acquire) {
-        media::cleanup(&job);
-        return Err("任务已取消".into());
-    }
-    if !status.success() {
-        let error = ffmpeg_error(&stderr);
-        log(&state.log_dir, &format!("FFmpeg 编码失败：{error}"));
-        media::cleanup(&job);
-        return Err(format!("视频编码失败：{error}"));
-    }
-
+    let selected = selected.ok_or_else(|| format!("视频编码失败：{last_error}"))?;
     emit_progress(
         app,
         "正在校验输出文件……",
@@ -214,7 +207,11 @@ fn run_process(app: &AppHandle, request: ProcessRequest) -> Result<ProcessResult
     .map_err(|e| format!("视频已生成，但历史记录保存失败：{e}"))?;
     log(
         &state.log_dir,
-        &format!("处理完成：{}", job.output.display()),
+        &format!(
+            "处理完成：{}，编码 {}",
+            job.output.display(),
+            selected.label
+        ),
     );
     emit_progress(
         app,
@@ -228,7 +225,60 @@ fn run_process(app: &AppHandle, request: ProcessRequest) -> Result<ProcessResult
         output_path: job.output.to_string_lossy().into_owned(),
         watermark_count: job.watermarks.len(),
         seed: job.seed_text,
+        encoder_label: selected.label.into(),
     })
+}
+
+fn run_ffmpeg(
+    app: &AppHandle,
+    state: &AppState,
+    input: &Path,
+    job: &media::PreparedJob,
+    encoder: media::VideoEncoder,
+) -> Result<(), String> {
+    let mut command = media::ffmpeg_command_with_encoder(&state.tools, input, job, encoder);
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("FFmpeg 启动失败：{e}"))?;
+    let stdout = child.stdout.take().ok_or("无法读取 FFmpeg 进度")?;
+    let mut stderr = child.stderr.take().ok_or("无法读取 FFmpeg 错误信息")?;
+    let child = Arc::new(Mutex::new(child));
+    *state.running.lock().unwrap_or_else(|e| e.into_inner()) = Some(RunningProcess {
+        child: child.clone(),
+        partial_output: job.partial_output.clone(),
+        temp_dir: job.temp_dir.clone(),
+    });
+    let error_reader = std::thread::spawn(move || {
+        let mut value = String::new();
+        let _ = stderr.read_to_string(&mut value);
+        value
+    });
+
+    for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+        if let Some(value) = line.strip_prefix("out_time=").and_then(parse_ffmpeg_time) {
+            emit_progress(
+                app,
+                &format!("视频编码：{}", encoder.label),
+                (value / job.media.duration * 100.0).clamp(0.0, 99.0),
+                value,
+                job.media.duration,
+            );
+        }
+    }
+    let status = child
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .wait()
+        .map_err(|e| format!("等待 FFmpeg 失败：{e}"))?;
+    let stderr = error_reader.join().unwrap_or_default();
+    *state.running.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    if state.cancelled.load(Ordering::Acquire) {
+        return Err("任务已取消".into());
+    }
+    if !status.success() {
+        return Err(ffmpeg_error(&stderr));
+    }
+    Ok(())
 }
 
 fn emit_progress(app: &AppHandle, stage: &str, percent: f64, processed: f64, total: f64) {
@@ -255,7 +305,7 @@ fn parse_ffmpeg_time(value: &str) -> Option<f64> {
 fn resolve_tools(app: &tauri::App) -> Result<Tools, String> {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     if cfg!(debug_assertions) {
-        let triple = option_env!("TAURI_ENV_TARGET_TRIPLE").unwrap_or("x86_64-pc-windows-gnullvm");
+        let triple = option_env!("TAURI_ENV_TARGET_TRIPLE").unwrap_or("x86_64-pc-windows-msvc");
         let suffix = if cfg!(windows) { ".exe" } else { "" };
         let bundled = |name: &str| {
             manifest
@@ -331,10 +381,29 @@ pub fn run() {
             let db_path = data_dir.join("framemark.sqlite3");
             db::initialize(&db_path)?;
             let tools = resolve_tools(app)?;
+            let encoders = media::detection_options(&tools);
+            let detected = encoders
+                .iter()
+                .filter(|option| option.available && option.id != "auto" && option.id != "cpu")
+                .map(|option| option.label.as_str())
+                .collect::<Vec<_>>()
+                .join("、");
+            log(
+                &log_dir,
+                &format!(
+                    "可用硬件编码：{}",
+                    if detected.is_empty() {
+                        "无"
+                    } else {
+                        &detected
+                    }
+                ),
+            );
             app.manage(AppState {
                 db_path,
                 log_dir,
                 tools,
+                encoders,
                 busy: AtomicBool::new(false),
                 cancelled: AtomicBool::new(false),
                 running: Mutex::new(None),

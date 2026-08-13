@@ -2,7 +2,7 @@
 
 ## FFmpeg
 
-发行构建从 [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) 获取 FFmpeg Essentials 静态构建。FFmpeg 是独立 sidecar，不与本程序链接。当前构建启用了 GPLv3 组件，完整许可证随安装包位于 `resources/licenses/FFmpeg-GPLv3.txt`；构建配置及对应源码入口见 gyan.dev 的发行说明。
+发行构建使用 Gyan.dev 的 FFmpeg 7.1.1 Essentials 静态构建。FFmpeg 是独立 sidecar，不与本程序链接。当前构建启用了 GPLv3 组件，完整许可证随安装包位于 `resources/licenses/FFmpeg-GPLv3.txt`；构建配置及对应源码入口见 gyan.dev 的发行说明。
 
 ## Noto Sans CJK
 

@@ -6,17 +6,18 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 
 type Identity = { id: number; platform: string; text: string; enabled: boolean };
-type Settings = { interval: number; opacity: number; fontSize: string; outputDir: string; randomOpacity: boolean; randomSize: boolean; safeMargin: number };
+type Settings = { interval: number; opacity: number; fontSize: string; outputDir: string; randomOpacity: boolean; randomSize: boolean; safeMargin: number; encoder: string };
+type EncodingOption = { id: string; label: string; available: boolean };
 type MediaInfo = { path: string; fileName: string; size: number; duration: number; width: number; height: number; fps: number; fpsText: string; videoCodec: string; audioCodec: string; hasAudio: boolean; rotation: number; hdr: boolean; hdrDescription: string };
 type HistorySummary = { id: number; originalName: string; outputPath: string; platform: string; watermarkCount: number; createdAt: number; fileExists: boolean };
 type Watermark = { number: number; timestamp: number; pts: number | null; frameIndex: number; x: number; y: number; fontSize: number; opacity: number; text: string };
 type HistoryDetail = { id: number; originalName: string; originalPath: string; outputName: string; outputPath: string; platform: string; watermarkText: string; interval: number; seed: string; width: number; height: number; duration: number; fps: number; videoCodec: string; audioCodec: string; createdAt: number; fileExists: boolean; watermarks: Watermark[] };
-type Bootstrap = { identities: Identity[]; settings: Settings; histories: HistorySummary[]; logDir: string };
+type Bootstrap = { identities: Identity[]; settings: Settings; histories: HistorySummary[]; logDir: string; encodingOptions: EncodingOption[] };
 type ProgressEvent = { stage: string; percent: number; processed: number; total: number };
-type ProcessResult = { historyId: number; outputPath: string; watermarkCount: number; seed: string };
+type ProcessResult = { historyId: number; outputPath: string; watermarkCount: number; seed: string; encoderLabel: string };
 
 const root = document.querySelector<HTMLDivElement>("#app")!;
-let data: Bootstrap = { identities: [], settings: { interval: 3, opacity: .45, fontSize: "medium", outputDir: "", randomOpacity: false, randomSize: false, safeMargin: .05 }, histories: [], logDir: "" };
+let data: Bootstrap = { identities: [], settings: { interval: 3, opacity: .45, fontSize: "medium", outputDir: "", randomOpacity: false, randomSize: false, safeMargin: .05, encoder: "auto" }, histories: [], logDir: "", encodingOptions: [] };
 let media: MediaInfo | null = null;
 let route: "process" | "history" | "settings" = "process";
 let currentDetail: HistoryDetail | null = null;
@@ -46,7 +47,7 @@ function shell(content: string) {
           <button class="nav-item ${route === "settings" ? "active" : ""}" data-route="settings"><span>⚙</span>设置</button>
         </nav>
         <div class="privacy"><span>●</span><div><strong>100% 本地处理</strong><small>原视频不离开你的电脑</small></div></div>
-        <div class="version">V1.0.1</div>
+        <div class="version">V1.0.2</div>
       </aside>
       <main class="content">${content}</main>
     </div>
@@ -231,6 +232,7 @@ async function startProcess() {
     randomOpacity: document.querySelector<HTMLInputElement>("#random-opacity")!.checked,
     randomSize: document.querySelector<HTMLInputElement>("#random-size")!.checked,
     safeMargin: Number(document.querySelector<HTMLInputElement>("#safe-margin")!.value) / 100,
+    encoder: data.settings.encoder,
   };
   try {
     const result = await invoke<ProcessResult>("process_video", { request });
@@ -246,7 +248,7 @@ async function startProcess() {
 
 function showComplete(result: ProcessResult, identity: Identity) {
   const dialog = document.querySelector<HTMLDialogElement>("#complete-dialog")!;
-  dialog.innerHTML = `<div class="modal-body complete"><div class="success">✓</div><h2>处理完成</h2><p>${html(result.outputPath.split(/[\\/]/).pop())}</p><div class="result-grid"><div><span>版权标记</span><strong>${result.watermarkCount} 个</strong></div><div><span>使用身份</span><strong>${html(identity.platform)} · ${html(identity.text)}</strong></div><div><span>随机 Seed</span><strong>${result.seed}</strong></div></div><div class="modal-actions"><button id="play-output" class="primary">播放视频</button><button id="reveal-output" class="secondary">打开文件位置</button></div><button id="close-complete" class="text-button">再次处理</button></div>`;
+  dialog.innerHTML = `<div class="modal-body complete"><div class="success">✓</div><h2>处理完成</h2><p>${html(result.outputPath.split(/[\\/]/).pop())}</p><div class="result-grid"><div><span>版权标记</span><strong>${result.watermarkCount} 个</strong></div><div><span>视频编码</span><strong>${html(result.encoderLabel)}</strong></div><div><span>使用身份</span><strong>${html(identity.platform)} · ${html(identity.text)}</strong></div><div><span>随机 Seed</span><strong>${result.seed}</strong></div></div><div class="modal-actions"><button id="play-output" class="primary">播放视频</button><button id="reveal-output" class="secondary">打开文件位置</button></div><button id="close-complete" class="text-button">再次处理</button></div>`;
   dialog.showModal();
   document.querySelector("#play-output")?.addEventListener("click", () => openPath(result.outputPath));
   document.querySelector("#reveal-output")?.addEventListener("click", () => revealItemInDir(result.outputPath));
@@ -279,8 +281,9 @@ function renderSettings() {
     </section><form id="defaults-form" class="card settings-card"><div class="section-title"><div><h2>默认水印参数</h2><p>处理页仍可单独调整</p></div></div>
       <div class="form-grid"><label>默认间隔（秒）<input name="interval" type="number" min="0.5" max="60" step="0.1" value="${data.settings.interval}"></label><label>默认字体大小<select name="fontSize"><option value="small">小</option><option value="medium">中</option><option value="large">大</option></select></label><label>默认透明度（%）<input name="opacity" type="number" min="20" max="100" value="${data.settings.opacity * 100}"></label><label>安全边距（%）<input name="safeMargin" type="number" min="2" max="20" value="${data.settings.safeMargin * 100}"></label></div>
       <label class="switch-line"><input name="randomOpacity" type="checkbox" ${data.settings.randomOpacity ? "checked" : ""}> 默认开启随机透明度</label><label class="switch-line"><input name="randomSize" type="checkbox" ${data.settings.randomSize ? "checked" : ""}> 默认开启随机大小</label>
+      <label>视频编码加速<select name="encoder">${data.encodingOptions.map((option) => `<option value="${option.id}" ${option.id === data.settings.encoder ? "selected" : ""} ${option.available ? "" : "disabled"}>${html(option.label)}${option.available ? "" : "（当前设备不可用）"}</option>`).join("")}</select><small>自动模式优先 NVIDIA、Intel、AMD，硬件初始化失败会自动回退 CPU。</small></label>
       <div class="output-setting"><span>默认输出目录</span><button id="settings-output" type="button" class="path-button">${html(data.settings.outputDir || "原视频目录")}</button></div><button class="primary" type="submit">保存默认设置</button>
-    </form><section class="card settings-card about-card"><h2>隐私与日志</h2><p>视频、截图、平台 ID 和历史记录均不会上传。运行日志仅保存在本机。</p><button id="open-logs" class="secondary">打开日志目录</button><div class="about-line"><span>帧印</span><strong>V1.0.1</strong></div></section></div>`);
+    </form><section class="card settings-card about-card"><h2>隐私与日志</h2><p>视频、截图、平台 ID 和历史记录均不会上传。运行日志仅保存在本机。</p><button id="open-logs" class="secondary">打开日志目录</button><div class="about-line"><span>帧印</span><strong>V1.0.2</strong></div></section></div>`);
   const fontSelect = document.querySelector<HTMLSelectElement>("[name=fontSize]"); if (fontSelect) fontSelect.value = data.settings.fontSize;
   bindSettings();
 }
@@ -300,7 +303,7 @@ function bindSettings() {
   document.querySelector("#open-logs")?.addEventListener("click", () => openPath(data.logDir));
   document.querySelector<HTMLFormElement>("#defaults-form")!.onsubmit = async (event) => {
     event.preventDefault(); const form = new FormData(event.currentTarget as HTMLFormElement);
-    const settings: Settings = { interval: Number(form.get("interval")), opacity: Number(form.get("opacity")) / 100, fontSize: String(form.get("fontSize")), safeMargin: Number(form.get("safeMargin")) / 100, outputDir: data.settings.outputDir, randomOpacity: form.get("randomOpacity") === "on", randomSize: form.get("randomSize") === "on" };
+    const settings: Settings = { interval: Number(form.get("interval")), opacity: Number(form.get("opacity")) / 100, fontSize: String(form.get("fontSize")), safeMargin: Number(form.get("safeMargin")) / 100, outputDir: data.settings.outputDir, randomOpacity: form.get("randomOpacity") === "on", randomSize: form.get("randomSize") === "on", encoder: String(form.get("encoder") ?? "auto") };
     try { await invoke("save_settings", { settings }); data.settings = settings; toast("默认设置已保存"); } catch (error) { toast(errorText(error), true); }
   };
 }
@@ -345,5 +348,6 @@ if (isTauri) {
 } else {
   // Browser-only development preview; the packaged app always uses Rust/SQLite data.
   data.identities = [{ id: 1, platform: "Bilibili", text: "UID:12345678", enabled: true }];
+  data.encodingOptions = [{ id: "auto", label: "自动（优先 GPU）", available: true }, { id: "cpu", label: "CPU（软件编码）", available: true }];
   render();
 }

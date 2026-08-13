@@ -44,6 +44,15 @@
 - 本机已有 WebView2 Runtime `151.0.4129.78`，因此未破坏性卸载共享 Runtime；缺失 Runtime 分支通过生成的 NSIS 安装逻辑和内嵌 Bootstrapper 配置验证。
 - 安装包：`帧印_1.0.1_x64-setup.exe`，67,447,460 字节；SHA-256：`0720D7E626DDFAA61DB3CCC481CA781E5B2BE868C571A149979C598F63432B99`。
 
+### 1.0.2 Windows 启动与 GPU 编码验证
+
+- Release `frame-mark.exe` 的 PE Optional Header 为 `IMAGE_SUBSYSTEM_WINDOWS_GUI`；安装包验证脚本会拒绝 Console subsystem。FFmpeg 与 ffprobe 都经 Windows `CREATE_NO_WINDOW` 创建，仍以管道接收进度和错误。
+- 随包 FFmpeg 固定为 7.1.1 Essentials。`-encoders` 含 `h264_nvenc`、`h264_qsv`、`h264_amf` 及对应 HEVC 名称；本机实际最小编码测试仅 NVENC 可用，因此自动模式选用 NVIDIA NVENC。
+- 硬件逐帧测试：5 秒、10 FPS、H.264 + AAC 样本的 CPU 和 NVENC 路径均只在目标帧检测到水印；输入/输出均为 50 帧，逐帧时间戳误差小于 2ms，音频保留。
+- 性能样本使用含一次 `drawtext` 的 H.264 + AAC 合成视频，音频 stream copy：1080P30/6 秒 CPU 2.83 秒、NVENC 0.87 秒；4K60/3 秒 CPU 9.20 秒、NVENC 4.25 秒。ffprobe 均为原始时长、分辨率、帧率、H.264 视频和 AAC 音频；NVIDIA `utilization.encoder` 峰值为 48% 与 50%。
+- 安装包副本从独立临时目录静默安装到独立目录，以仅含 Windows 系统目录的 PATH 启动主界面成功；动态依赖审计覆盖 `frame-mark.exe`、`ffmpeg.exe`、`ffprobe.exe`，未发现遗漏的非系统 DLL。
+- 安装包：`帧印_1.0.2_x64-setup.exe`，58,521,713 字节；SHA-256：`DE7C2CD29035662B4DDC9B1298CB640A3873C3FB37F417AE977256FB9181EE61`。
+
 ## 未覆盖范围
 
 - 未在独立 Windows 10 与 macOS 机器执行安装和处理。

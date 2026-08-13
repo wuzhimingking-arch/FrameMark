@@ -22,6 +22,7 @@
 - 视频处理变更需用真实样本验证 ffprobe 信息、音频、方向、时长与严格单帧。
 - Windows 正式发行固定使用 `x86_64-pc-windows-msvc` 与 NSIS 安装包；不得把 `target` 中的裸 EXE 当作交付物。
 - Windows 安装包必须内嵌 WebView2 Bootstrapper，发布前运行 `npm run verify:windows` 审计动态库并从独立安装目录启动。
+- 硬件编码器必须由随包 FFmpeg 的实际最小编码测试决定可用性；不可用或任务初始化失败时清理临时输出并回退 CPU。
 - 中文文件通过 PowerShell 读取时显式使用 UTF-8；不要因终端乱码重写源码。
 
 ## 版本、文档与 Git

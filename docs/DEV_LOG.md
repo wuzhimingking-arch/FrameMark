@@ -33,3 +33,12 @@
 - WebView2：NSIS 改为内嵌微软 Evergreen Bootstrapper，安装时检测 Runtime，缺失时由 Bootstrapper 安装；不向系统目录手工复制 DLL。
 - 依赖：安装包继续包含 FFmpeg、ffprobe、Noto Sans SC 和许可证；PE 审计同时覆盖三个 EXE，拒绝 WebView2Loader、libunwind、GNU/VC++ 外置运行库和其他非系统 DLL。
 - 测试：TypeScript/Vite 构建通过；MSVC Windows 测试程序 7 项通过；1.0.1 安装包在临时副本、独立安装目录和最小 PATH 下启动主界面成功，开始菜单、资源、卸载均通过。
+
+## 2026-08-14 · 1.0.2
+
+- 需求：消除正式启动及 FFmpeg 调用的控制台窗口，并加入自动 GPU H.264 编码加速。
+- 根因：Release 二进制仍使用 Windows Console subsystem；FFmpeg/ffprobe 没有统一设置 Windows 无控制台创建标志。原 FFmpeg 9.0.1 虽列出 NVENC，但要求 NVENC API 13.1 / NVIDIA 驱动 610+，与本机 RTX 5070 Ti 的 596.49 / API 13.0 不兼容。
+- 修改：Release 入口使用 Windows GUI subsystem；所有 FFmpeg/ffprobe 创建均使用 `CREATE_NO_WINDOW`，保留 stdout、stderr、进度和退出码。设置页新增自动、NVENC、QSV、AMF、CPU；启动时对随包 FFmpeg 做最小 H.264 实测，按 NVENC、QSV、AMF、CPU 选择，硬件初始化失败清理部分输出后自动回退 CPU。
+- 分发：固定 FFmpeg 7.1.1 Essentials 静态构建，实测兼容当前 NVIDIA 驱动，且含 NVENC/QSV/AMF；许可证说明同步更新。
+- 测试：MSVC Rust 9 项通过，覆盖 CPU 与 NVENC 严格单帧、音频、VFR 时间戳、旋转、取消和不可用硬件回退。CPU/NVENC 实测：1080P30/6 秒为 2.83/0.87 秒，4K60/3 秒为 9.20/4.25 秒；NVENC 采样 Video Encode 峰值分别为 48%/50%。
+- 发行：1.0.2 NSIS 安装包在独立临时目录、干净 PATH 下启动成功；PE 审计确认 GUI subsystem、无 WebView2Loader 或其他遗漏动态库。
