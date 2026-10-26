@@ -1,8 +1,8 @@
-use crate::layout::{build_layout, choose_frames, FramePoint, SplitMix64};
-use crate::models::{EncodingOption, MediaInfo, ProcessRequest, Watermark};
+use crate::layout::{build_plan, choose_frames, FramePoint, SplitMix64};
+use crate::models::{EncodingOption, MediaInfo, ProcessRequest, Watermark, WatermarkPlan};
 use serde_json::Value;
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Write};
+use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -57,6 +57,7 @@ pub struct PreparedJob {
     pub filter_script: PathBuf,
     pub seed_text: String,
     pub copy_audio: bool,
+    pub plan: WatermarkPlan,
 }
 
 pub fn detection_options(tools: &Tools) -> Vec<EncodingOption> {
@@ -260,7 +261,7 @@ pub fn inspect(tools: &Tools, input: &Path) -> Result<MediaInfo, String> {
 pub fn prepare(
     tools: &Tools,
     request: &ProcessRequest,
-    text: &str,
+    texts: &[String],
     seed: u64,
 ) -> Result<PreparedJob, String> {
     validate_request(request)?;
@@ -288,18 +289,6 @@ pub fn prepare(
     let full = (media.duration / request.interval).floor() as usize;
     let mut rng = SplitMix64::new(seed);
     let chosen = choose_frames(&groups, full, &mut rng)?;
-    let watermarks = build_layout(
-        &chosen,
-        media.width,
-        media.height,
-        text,
-        &request.font_size,
-        request.opacity,
-        request.safe_margin,
-        request.random_opacity,
-        request.random_size,
-        seed ^ 0xA0761D6478BD642F,
-    )?;
     let output = unique_output(&output_dir, input)?;
     let partial_output = output.with_file_name(format!(
         ".{}.framemark-part.mp4",
@@ -319,16 +308,29 @@ pub fn prepare(
         })
         .find(|path| fs::create_dir(path).is_ok())
         .ok_or("无法创建独立临时目录")?;
-    let text_file = temp_dir.join("watermark.txt");
-    File::create(&text_file)
-        .and_then(|mut file| file.write_all(text.as_bytes()))
-        .map_err(|e| format!("无法写入临时水印：{e}"))?;
+    let planned = make_plan(
+        tools,
+        request,
+        &chosen,
+        media.width,
+        media.height,
+        texts,
+        seed,
+        &temp_dir,
+    );
+    let plan = match planned {
+        Ok(plan) => plan,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&temp_dir);
+            return Err(error);
+        }
+    };
+    let watermarks = plan.marks.clone();
     let filter_script = temp_dir.join("filter.txt");
-    fs::write(
-        &filter_script,
-        filter_graph(tools, &text_file, &watermarks, request),
-    )
-    .map_err(|e| format!("无法写入 FFmpeg 滤镜：{e}"))?;
+    if let Err(error) = write_filter(tools, &temp_dir, &filter_script, &watermarks, request) {
+        let _ = fs::remove_dir_all(&temp_dir);
+        return Err(error);
+    }
     let copy_audio = matches!(
         media.audio_codec.as_str(),
         "aac" | "mp3" | "ac3" | "eac3" | "alac"
@@ -342,6 +344,7 @@ pub fn prepare(
         filter_script,
         seed_text,
         copy_audio,
+        plan,
     })
 }
 
@@ -367,6 +370,10 @@ pub fn ffmpeg_command_with_encoder(
             "[marked]",
             "-map",
             "0:a?",
+            "-map",
+            "0:s?",
+            "-c:s",
+            "mov_text",
             "-map_metadata",
             "0",
             "-map_chapters",
@@ -523,62 +530,199 @@ fn scan_frames(
     Ok(groups)
 }
 
-fn filter_graph(
+fn padding(size: u32) -> u32 {
+    (size / 5).max(4) + 3
+}
+
+fn make_plan(
     tools: &Tools,
-    text_file: &Path,
+    request: &ProcessRequest,
+    frames: &[FramePoint],
+    width: u32,
+    height: u32,
+    texts: &[String],
+    seed: u64,
+    temp: &Path,
+) -> Result<WatermarkPlan, String> {
+    let mut plan = build_plan(
+        frames,
+        width,
+        height,
+        texts,
+        &request.mode,
+        &request.font_size,
+        request.opacity,
+        request.safe_margin,
+        request.random_opacity,
+        request.random_size,
+        seed ^ 0xA0761D6478BD642F,
+        |text, size| measure_text(tools, temp, text, size, width, height),
+    )?;
+    plan.config = Some(request.clone());
+    Ok(plan)
+}
+
+fn measure_text(
+    tools: &Tools,
+    temp: &Path,
+    text: &str,
+    size: u32,
+    width: u32,
+    height: u32,
+) -> Result<(u32, u32), String> {
+    let text_file = temp.join("measure.txt");
+    fs::write(&text_file, text).map_err(|e| e.to_string())?;
+    let pad = padding(size);
+    let filter = format!("drawtext=fontfile='{}':textfile='{}':expansion=none:fontsize={}:line_spacing={}:fontcolor=white:borderw={}:bordercolor=white:x={}:y={}",
+        filter_path(&tools.font),filter_path(&text_file),size,size/4,(size/24).max(1),pad,pad);
+    let output = new_command(&tools.ffmpeg)
+        .args(["-v", "error", "-f", "lavfi", "-i"])
+        .arg(format!("color=c=black:s={width}x{height}:r=1"))
+        .args([
+            "-vf",
+            &filter,
+            "-frames:v",
+            "1",
+            "-pix_fmt",
+            "gray",
+            "-f",
+            "rawvideo",
+            "pipe:1",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "测量水印失败：{}",
+            concise(&String::from_utf8_lossy(&output.stderr))
+        ));
+    }
+    let mut right = 0;
+    let mut bottom = 0;
+    for (i, pixel) in output.stdout.iter().enumerate() {
+        if *pixel > 32 {
+            right = right.max(i as u32 % width + 1);
+            bottom = bottom.max(i as u32 / width + 1);
+        }
+    }
+    if right == 0 {
+        return Err("水印没有可显示字符".into());
+    }
+    if right + pad >= width || bottom + pad >= height {
+        return Ok((width + 1, height + 1));
+    }
+    Ok((right + pad, bottom + pad))
+}
+
+fn write_filter(
+    tools: &Tools,
+    temp: &Path,
+    script: &Path,
     marks: &[Watermark],
     request: &ProcessRequest,
-) -> String {
-    let enable = marks
-        .iter()
-        .map(|m| format!("eq(n\\,{})", m.frame_index))
-        .collect::<Vec<_>>()
-        .join("+");
-    let x = marks
-        .iter()
-        .map(|m| format!("{}*eq(n\\,{})", m.x, m.frame_index))
-        .collect::<Vec<_>>()
-        .join("+");
-    let y = marks
-        .iter()
-        .map(|m| format!("{}*eq(n\\,{})", m.y, m.frame_index))
-        .collect::<Vec<_>>()
-        .join("+");
-    let alpha = marks
-        .iter()
-        .map(|m| format!("{:.3}*eq(n\\,{})", m.opacity, m.frame_index))
-        .collect::<Vec<_>>()
-        .join("+");
-    let base_size = marks.first().map(|m| m.font_size).unwrap_or(32);
-    let font_size = if request.random_size {
-        format!(
-            "{}+{}",
-            base_size,
-            marks
-                .iter()
-                .skip(1)
-                .filter(|m| m.font_size != base_size)
-                .map(|m| format!(
-                    "{}*eq(n\\,{})",
-                    m.font_size as i64 - base_size as i64,
-                    m.frame_index
-                ))
-                .collect::<Vec<_>>()
-                .join("+")
-        )
-    } else {
-        base_size.to_string()
-    };
+) -> Result<(), String> {
+    let mut groups: std::collections::BTreeMap<(String, u32, usize), Vec<&Watermark>> =
+        std::collections::BTreeMap::new();
+    for m in marks {
+        groups
+            .entry((
+                m.rendered_text.clone(),
+                m.font_size,
+                (m.number - 1) % request.watermark_ids.len(),
+            ))
+            .or_default()
+            .push(m);
+    }
     let (color, border) = if request.color == "black" {
         ("black", "white@0.70")
     } else {
         ("white", "black@0.70")
     };
-    format!(
-        "[0:v:0]drawtext=fontfile='{}':textfile='{}':reload=0:fontsize='{}':fontcolor={}:borderw={}:bordercolor={}:box={}:boxcolor=black@0.28:boxborderw={}:fix_bounds=1:x='{}':y='{}':alpha='{}':enable='{}'[marked]",
-        filter_path(&tools.font), filter_path(text_file), font_size, color, (base_size / 24).max(1), border,
-        if request.background { 1 } else { 0 }, (base_size / 5).max(4), x, y, alpha, enable
-    )
+    let mut filters = Vec::new();
+    for (index, ((text, size, _slot), batch)) in groups.into_iter().enumerate() {
+        let text_file = temp.join(format!("text-{index}.txt"));
+        fs::write(&text_file, text).map_err(|e| e.to_string())?;
+        let expr = |value: fn(&Watermark) -> f64| {
+            batch
+                .iter()
+                .map(|m| format!("{:.3}*eq(n\\,{})", value(m), m.frame_index))
+                .collect::<Vec<_>>()
+                .join("+")
+        };
+        let enable = batch
+            .iter()
+            .map(|m| format!("eq(n\\,{})", m.frame_index))
+            .collect::<Vec<_>>()
+            .join("+");
+        let x = expr(|m| (m.x + padding(m.font_size)) as f64);
+        let y = expr(|m| (m.y + padding(m.font_size)) as f64);
+        let alpha = expr(|m| m.opacity);
+        filters.push(format!("drawtext=fontfile='{}':textfile='{}':expansion=none:fontsize={}:line_spacing={}:fontcolor={}:borderw={}:bordercolor={}:box={}:boxcolor=black@0.28:boxborderw={}:x='{}':y='{}':alpha='{}':enable='{}'",
+            filter_path(&tools.font),filter_path(&text_file),size,size/4,color,(size/24).max(1),border,if request.background {1}else{0},size/5,x,y,alpha,enable));
+    }
+    fs::write(script, format!("[0:v:0]{}[marked]", filters.join(","))).map_err(|e| e.to_string())
+}
+
+pub fn preview(
+    tools: &Tools,
+    request: &ProcessRequest,
+    texts: &[String],
+    next: usize,
+    seed: u64,
+) -> Result<Vec<u8>, String> {
+    validate_request(request)?;
+    let info = inspect(tools, Path::new(&request.input_path))?;
+    let temp = std::env::temp_dir().join(format!("framemark-preview-{seed}"));
+    fs::create_dir(&temp).map_err(|e| e.to_string())?;
+    let result = (|| {
+        let active = if request.mode == "sequential" {
+            vec![texts.get(next % texts.len()).ok_or("请选择水印")?.clone()]
+        } else {
+            texts.to_vec()
+        };
+        let frame = FramePoint {
+            timestamp: 0.0,
+            pts: None,
+            index: 0,
+        };
+        let plan = make_plan(
+            tools,
+            request,
+            &[frame],
+            info.width,
+            info.height,
+            &active,
+            seed,
+            &temp,
+        )?;
+        let script = temp.join("preview-filter.txt");
+        write_filter(tools, &temp, &script, &plan.marks, request)?;
+        let out = new_command(&tools.ffmpeg)
+            .args(["-v", "error", "-ss", "0", "-i"])
+            .arg(&request.input_path)
+            .arg("-/filter_complex")
+            .arg(&script)
+            .args([
+                "-map",
+                "[marked]",
+                "-frames:v",
+                "1",
+                "-an",
+                "-c:v",
+                "png",
+                "-f",
+                "image2pipe",
+                "pipe:1",
+            ])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            return Err(concise(&String::from_utf8_lossy(&out.stderr)));
+        }
+        Ok(out.stdout)
+    })();
+    let _ = fs::remove_dir_all(temp);
+    result
 }
 
 fn unique_output(dir: &Path, input: &Path) -> Result<PathBuf, String> {
@@ -601,6 +745,20 @@ fn unique_output(dir: &Path, input: &Path) -> Result<PathBuf, String> {
 }
 
 fn validate_request(request: &ProcessRequest) -> Result<(), String> {
+    if request.watermark_ids.is_empty()
+        || !matches!(request.mode.as_str(), "simultaneous" | "sequential")
+    {
+        return Err("请至少选择一条水印，并选择有效出现方式".into());
+    }
+    if request
+        .watermark_ids
+        .iter()
+        .collect::<std::collections::BTreeSet<_>>()
+        .len()
+        != request.watermark_ids.len()
+    {
+        return Err("不能重复选择同一条水印".into());
+    }
     if !(0.5..=60.0).contains(&request.interval) {
         return Err("水印间隔必须在 0.5 到 60 秒之间".into());
     }
@@ -721,7 +879,8 @@ mod tests {
         let request = ProcessRequest {
             input_path: input.to_string_lossy().into_owned(),
             output_dir: temp.to_string_lossy().into_owned(),
-            identity_id: 1,
+            watermark_ids: vec![1],
+            mode: "simultaneous".into(),
             interval: 3.0,
             opacity: 1.0,
             font_size: "medium".into(),
@@ -732,7 +891,7 @@ mod tests {
             safe_margin: 0.05,
             encoder: "cpu".into(),
         };
-        let job = prepare(&tools, &request, "UID:12345678", 0xA42F72E19B30).unwrap();
+        let job = prepare(&tools, &request, &["UID:12345678".into()], 0xA42F72E19B30).unwrap();
         assert_eq!(job.watermarks.len(), 2);
         let output = ffmpeg_command(&tools, &input, &job).output().unwrap();
         assert!(
@@ -811,7 +970,8 @@ mod tests {
         let request = ProcessRequest {
             input_path: input.to_string_lossy().into_owned(),
             output_dir: temp.to_string_lossy().into_owned(),
-            identity_id: 1,
+            watermark_ids: vec![1],
+            mode: "simultaneous".into(),
             interval: 3.0,
             opacity: 1.0,
             font_size: "medium".into(),
@@ -822,7 +982,7 @@ mod tests {
             safe_margin: 0.05,
             encoder: option.id,
         };
-        let job = prepare(&tools, &request, "GPU-UID", 0xA42F72E19B30).unwrap();
+        let job = prepare(&tools, &request, &["GPU-UID".into()], 0xA42F72E19B30).unwrap();
         let output = ffmpeg_command_with_encoder(&tools, &input, &job, encoder)
             .output()
             .unwrap();
@@ -888,6 +1048,188 @@ mod tests {
     }
 
     #[test]
+    fn multi_watermarks_cpu_gpu_exact_events_and_history() {
+        let tools = test_tools();
+        let dir =
+            std::env::temp_dir().join(format!("帧印 多水印测试-{}", crate::layout::new_seed()));
+        fs::create_dir(&dir).unwrap();
+        let input = dir.join("中文 空格.mp4");
+        assert!(new_command(&tools.ffmpeg)
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=640x360:r=20:d=5",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=duration=5",
+                "-vf",
+                "select=\'if(lt(t,2.5),not(mod(n,2)),1)\'",
+                "-fps_mode",
+                "vfr",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-c:a",
+                "aac",
+                "-shortest"
+            ])
+            .arg(&input)
+            .output()
+            .unwrap()
+            .status
+            .success());
+        let texts = vec![
+            "A @创作者".into(),
+            "B © 2026\nexample.test".into(),
+            "C 100% ID".into(),
+        ];
+        let mut encoders = vec![CPU_ENCODER];
+        if let Some(gpu) = encoding_attempts("auto", &detection_options(&tools))
+            .into_iter()
+            .find(|e| e.id != "cpu")
+        {
+            encoders.push(gpu);
+        }
+        let database = dir.join("history.sqlite3");
+        crate::db::initialize(&database).unwrap();
+        for mode in ["simultaneous", "sequential"] {
+            for encoder in &encoders {
+                let request = ProcessRequest {
+                    input_path: input.to_string_lossy().into(),
+                    output_dir: dir.to_string_lossy().into(),
+                    watermark_ids: vec![1, 2, 3],
+                    mode: mode.into(),
+                    interval: 0.5,
+                    opacity: 1.0,
+                    font_size: "medium".into(),
+                    color: "white".into(),
+                    background: true,
+                    random_opacity: false,
+                    random_size: true,
+                    safe_margin: 0.05,
+                    encoder: encoder.id.into(),
+                };
+                let job = prepare(&tools, &request, &texts, 4242).unwrap();
+                assert_eq!(job.plan.event_count, 10);
+                assert_eq!(
+                    job.watermarks.len(),
+                    if mode == "simultaneous" { 30 } else { 10 }
+                );
+                let result = ffmpeg_command_with_encoder(&tools, &input, &job, *encoder)
+                    .output()
+                    .unwrap();
+                assert!(
+                    result.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&result.stderr)
+                );
+                validate_output(&tools, &job.media, &job.partial_output).unwrap();
+                let audio_hash = |path: &Path| {
+                    let out = new_command(&tools.ffmpeg)
+                        .args(["-v", "error", "-i"])
+                        .arg(path)
+                        .args([
+                            "-map", "0:a:0", "-c:a", "copy", "-f", "hash", "-hash", "md5", "pipe:1",
+                        ])
+                        .output()
+                        .unwrap();
+                    assert!(out.status.success());
+                    out.stdout
+                };
+                assert_eq!(
+                    audio_hash(&input),
+                    audio_hash(&job.partial_output),
+                    "音频压缩流必须保持完全一致"
+                );
+                let image = preview(&tools, &request, &texts, 1, 555).unwrap();
+                assert_eq!(&image[..8], b"\x89PNG\r\n\x1a\n");
+                let decoded = new_command(&tools.ffmpeg)
+                    .args(["-v", "error", "-i"])
+                    .arg(&job.partial_output)
+                    .args([
+                        "-an",
+                        "-fps_mode",
+                        "passthrough",
+                        "-pix_fmt",
+                        "gray",
+                        "-f",
+                        "rawvideo",
+                        "pipe:1",
+                    ])
+                    .output()
+                    .unwrap();
+                assert!(decoded.status.success());
+                let frame_size = 640 * 360;
+                assert_eq!(decoded.stdout.len(), 75 * frame_size);
+                let mut detected = std::collections::BTreeSet::new();
+                for (index, pixels) in decoded.stdout.chunks(frame_size).enumerate() {
+                    if pixels.iter().any(|v| *v > 100) {
+                        detected.insert(index as u64);
+                    }
+                }
+                assert_eq!(
+                    detected,
+                    job.watermarks.iter().map(|m| m.frame_index).collect()
+                );
+                for (i, m) in job.watermarks.iter().enumerate() {
+                    if mode == "sequential" {
+                        assert_eq!(m.text, texts[i % 3]);
+                    }
+                    let pixels = &decoded.stdout[m.frame_index as usize * frame_size
+                        ..(m.frame_index as usize + 1) * frame_size];
+                    let mut visible = false;
+                    for y in m.y..m.y + m.height {
+                        if pixels[(y * 640 + m.x) as usize..(y * 640 + m.x + m.width) as usize]
+                            .iter()
+                            .any(|v| *v > 100)
+                        {
+                            visible = true;
+                            break;
+                        }
+                    }
+                    assert!(visible, "每条水印在所记录区域都必须可见");
+                }
+                let times = frame_times(&tools, &job.partial_output);
+                let original_times = frame_times(&tools, &input);
+                assert_eq!(times.len(), original_times.len());
+                assert!(times
+                    .iter()
+                    .zip(original_times)
+                    .all(|(a, b)| (a - b).abs() < 0.002));
+                for m in &job.watermarks {
+                    assert!((times[m.frame_index as usize] - m.timestamp).abs() < 0.002);
+                }
+                let id = crate::db::insert_history(
+                    &database,
+                    &job.media,
+                    &job.output,
+                    &job.plan,
+                    request.interval,
+                    &job.seed_text,
+                    &job.watermarks,
+                )
+                .unwrap();
+                let saved = crate::db::history(&database, id).unwrap();
+                assert_eq!(saved.plan.texts, texts);
+                assert_eq!(saved.watermarks, job.watermarks);
+                assert_eq!(saved.plan.mode, mode);
+                eprintln!(
+                    "validated mode={mode} encoder={} events=10 draws={} frames=75 VFR=true audio=aac",
+                    encoder.label,
+                    job.watermarks.len()
+                );
+                cleanup(&job);
+            }
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn cancellation_removes_partial_output() {
         let tools = test_tools();
         let temp =
@@ -914,7 +1256,8 @@ mod tests {
         let request = ProcessRequest {
             input_path: input.to_string_lossy().into_owned(),
             output_dir: temp.to_string_lossy().into_owned(),
-            identity_id: 1,
+            watermark_ids: vec![1],
+            mode: "simultaneous".into(),
             interval: 3.0,
             opacity: 0.45,
             font_size: "medium".into(),
@@ -925,7 +1268,7 @@ mod tests {
             safe_margin: 0.05,
             encoder: "cpu".into(),
         };
-        let job = prepare(&tools, &request, "@CancelTest", 123).unwrap();
+        let job = prepare(&tools, &request, &["@CancelTest".into()], 123).unwrap();
         let mut child = ffmpeg_command(&tools, &input, &job).spawn().unwrap();
         std::thread::sleep(std::time::Duration::from_millis(100));
         let _ = child.kill();
@@ -933,6 +1276,50 @@ mod tests {
         cleanup(&job);
         assert!(!job.partial_output.exists());
         assert!(!job.temp_dir.exists());
+        fs::remove_dir_all(temp).unwrap();
+    }
+
+    #[test]
+    fn duplicate_texts_keep_independent_same_frame_positions() {
+        let tools = test_tools();
+        let temp =
+            std::env::temp_dir().join(format!("framemark-duplicate-{}", crate::layout::new_seed()));
+        fs::create_dir(&temp).unwrap();
+        let request: ProcessRequest = serde_json::from_value(serde_json::json!({
+            "inputPath":"","outputDir":"","watermarkIds":[1,2],"mode":"simultaneous",
+            "interval":3,"opacity":1,"fontSize":"medium","color":"white","background":false,
+            "randomOpacity":false,"randomSize":false,"safeMargin":0.05
+        }))
+        .unwrap();
+        let frames = [FramePoint {
+            timestamp: 0.0,
+            pts: Some(0),
+            index: 0,
+        }];
+        let plan = make_plan(
+            &tools,
+            &request,
+            &frames,
+            640,
+            360,
+            &["COPY".into(), "COPY".into()],
+            101,
+            &temp,
+        )
+        .unwrap();
+        let script = temp.join("filter.txt");
+        write_filter(&tools, &temp, &script, &plan.marks, &request).unwrap();
+        assert_eq!(
+            fs::read_to_string(&script)
+                .unwrap()
+                .matches("drawtext=")
+                .count(),
+            2
+        );
+        assert_ne!(
+            (plan.marks[0].x, plan.marks[0].y),
+            (plan.marks[1].x, plan.marks[1].y)
+        );
         fs::remove_dir_all(temp).unwrap();
     }
 
@@ -1087,7 +1474,8 @@ mod tests {
         let request = ProcessRequest {
             input_path: input.to_string_lossy().into_owned(),
             output_dir: output_dir.to_string_lossy().into_owned(),
-            identity_id: 1,
+            watermark_ids: vec![1],
+            mode: "simultaneous".into(),
             interval,
             opacity: 1.0,
             font_size: "small".into(),
@@ -1098,7 +1486,7 @@ mod tests {
             safe_margin: 0.02,
             encoder: "cpu".into(),
         };
-        let job = prepare(tools, &request, "ID1", seed).unwrap();
+        let job = prepare(tools, &request, &["ID1".into()], seed).unwrap();
         let result = ffmpeg_command(tools, input, &job).output().unwrap();
         assert!(
             result.status.success(),

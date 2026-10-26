@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
     pub id: i64,
-    pub platform: String,
     pub text: String,
     pub enabled: bool,
 }
@@ -21,6 +20,8 @@ pub struct Settings {
     pub safe_margin: f64,
     #[serde(default = "default_encoder")]
     pub encoder: String,
+    #[serde(default)]
+    pub selected_ids: Vec<i64>,
 }
 
 fn default_encoder() -> String {
@@ -38,6 +39,7 @@ impl Default for Settings {
             random_size: false,
             safe_margin: 0.05,
             encoder: default_encoder(),
+            selected_ids: Vec::new(),
         }
     }
 }
@@ -66,7 +68,8 @@ pub struct MediaInfo {
 pub struct ProcessRequest {
     pub input_path: String,
     pub output_dir: String,
-    pub identity_id: i64,
+    pub watermark_ids: Vec<i64>,
+    pub mode: String,
     pub interval: f64,
     pub opacity: f64,
     pub font_size: String,
@@ -91,6 +94,26 @@ pub struct Watermark {
     pub font_size: u32,
     pub opacity: f64,
     pub text: String,
+    #[serde(default)]
+    pub event: usize,
+    #[serde(default)]
+    pub width: u32,
+    #[serde(default)]
+    pub height: u32,
+    #[serde(default)]
+    pub rendered_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkPlan {
+    pub algorithm_version: u32,
+    pub mode: String,
+    pub texts: Vec<String>,
+    pub event_count: usize,
+    pub marks: Vec<Watermark>,
+    #[serde(default)]
+    pub config: Option<ProcessRequest>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,6 +124,7 @@ pub struct HistorySummary {
     pub output_path: String,
     pub platform: String,
     pub watermark_count: usize,
+    pub event_count: usize,
     pub created_at: i64,
     pub file_exists: bool,
 }
@@ -126,6 +150,7 @@ pub struct HistoryDetail {
     pub created_at: i64,
     pub file_exists: bool,
     pub watermarks: Vec<Watermark>,
+    pub plan: WatermarkPlan,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -163,4 +188,5 @@ pub struct ProcessResult {
     pub watermark_count: usize,
     pub seed: String,
     pub encoder_label: String,
+    pub event_count: usize,
 }

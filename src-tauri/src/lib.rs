@@ -60,6 +60,27 @@ fn delete_identity(state: State<'_, AppState>, id: i64) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn reorder_watermarks(state: State<'_, AppState>, ids: Vec<i64>) -> Result<(), String> {
+    db::reorder_identities(&state.db_path, &ids)
+}
+
+#[tauri::command]
+async fn preview_watermarks(
+    app: AppHandle,
+    request: ProcessRequest,
+    next: usize,
+) -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let texts = db::selected_texts(&state.db_path, &request.watermark_ids)?;
+        media::preview(&state.tools, &request, &texts, next, layout::new_seed())
+            .map(tauri::ipc::Response::new)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 fn save_settings(state: State<'_, AppState>, settings: Settings) -> Result<(), String> {
     db::save_settings(&state.db_path, &settings)
 }
@@ -114,13 +135,10 @@ fn cancel_process(state: State<'_, AppState>) -> Result<(), String> {
 
 fn run_process(app: &AppHandle, request: ProcessRequest) -> Result<ProcessResult, String> {
     let state = app.state::<AppState>();
-    let identity = db::identity(&state.db_path, request.identity_id)?;
-    if !identity.enabled {
-        return Err("所选平台身份已停用".into());
-    }
+    let texts = db::selected_texts(&state.db_path, &request.watermark_ids)?;
     emit_progress(app, "正在读取真实视频帧……", 0.0, 0.0, 0.0);
     let seed = layout::new_seed();
-    let job = media::prepare(&state.tools, &request, &identity.text, seed)?;
+    let job = media::prepare(&state.tools, &request, &texts, seed)?;
     if state.cancelled.load(Ordering::Acquire) {
         media::cleanup(&job);
         return Err("任务已取消".into());
@@ -198,8 +216,7 @@ fn run_process(app: &AppHandle, request: ProcessRequest) -> Result<ProcessResult
         &state.db_path,
         &job.media,
         &job.output,
-        &identity.platform,
-        &identity.text,
+        &job.plan,
         request.interval,
         &job.seed_text,
         &job.watermarks,
@@ -226,6 +243,7 @@ fn run_process(app: &AppHandle, request: ProcessRequest) -> Result<ProcessResult
         watermark_count: job.watermarks.len(),
         seed: job.seed_text,
         encoder_label: selected.label.into(),
+        event_count: job.plan.event_count,
     })
 }
 
@@ -415,6 +433,8 @@ pub fn run() {
             inspect_video,
             save_identity,
             delete_identity,
+            reorder_watermarks,
+            preview_watermarks,
             save_settings,
             list_histories,
             history_detail,

@@ -1,4 +1,6 @@
-use crate::models::{HistoryDetail, HistorySummary, Identity, MediaInfo, Settings, Watermark};
+use crate::models::{
+    HistoryDetail, HistorySummary, Identity, MediaInfo, Settings, Watermark, WatermarkPlan,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 
@@ -28,6 +30,7 @@ pub fn initialize(path: &Path) -> Result<(), String> {
          );",
     )
     .map_err(error)?;
+    migrate(&db)?;
     if db
         .query_row("SELECT 1 FROM settings WHERE id=1", [], |_| Ok(()))
         .optional()
@@ -43,6 +46,63 @@ pub fn initialize(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn migrate(db: &Connection) -> Result<(), String> {
+    let version: i64 = db
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .map_err(error)?;
+    if version < 1 {
+        db.execute_batch(
+            "BEGIN IMMEDIATE;
+            ALTER TABLE identities ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+            UPDATE identities SET sort_order=id;
+            ALTER TABLE histories ADD COLUMN plan_json TEXT;
+            PRAGMA user_version=1;
+            COMMIT;",
+        )
+        .map_err(error)?;
+    }
+    Ok(())
+}
+
+pub fn reorder_identities(path: &Path, ids: &[i64]) -> Result<(), String> {
+    let mut db = connection(path)?;
+    let tx = db.transaction().map_err(error)?;
+    let all: Vec<i64> = {
+        let mut stmt = tx.prepare("SELECT id FROM identities").map_err(error)?;
+        let rows = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(error)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(error)?;
+        rows
+    };
+    let unique: std::collections::BTreeSet<_> = ids.iter().copied().collect();
+    if ids.len() != unique.len() || unique != all.iter().copied().collect() {
+        return Err("水印顺序必须包含全部水印且不能重复".into());
+    }
+    for (i, id) in ids.iter().enumerate() {
+        tx.execute(
+            "UPDATE identities SET sort_order=?1 WHERE id=?2",
+            params![i, id],
+        )
+        .map_err(error)?;
+    }
+    tx.commit().map_err(error)
+}
+
+pub fn selected_texts(path: &Path, ids: &[i64]) -> Result<Vec<String>, String> {
+    if ids.is_empty() {
+        return Err("请至少选择一条水印".into());
+    }
+    ids.iter()
+        .map(|id| {
+            let item = identity(path, *id)?;
+            crate::layout::validate_text(&item.text)?;
+            Ok(item.text)
+        })
+        .collect()
+}
+
 fn connection(path: &Path) -> Result<Connection, String> {
     let db = Connection::open(path).map_err(error)?;
     db.execute_batch("PRAGMA foreign_keys=ON;").map_err(error)?;
@@ -52,15 +112,14 @@ fn connection(path: &Path) -> Result<Connection, String> {
 pub fn identities(path: &Path) -> Result<Vec<Identity>, String> {
     let db = connection(path)?;
     let mut stmt = db
-        .prepare("SELECT id,platform,text,enabled FROM identities ORDER BY id")
+        .prepare("SELECT id,text,enabled FROM identities ORDER BY sort_order,id")
         .map_err(error)?;
     let result = stmt
         .query_map([], |row| {
             Ok(Identity {
                 id: row.get(0)?,
-                platform: row.get(1)?,
-                text: row.get(2)?,
-                enabled: row.get(3)?,
+                text: row.get(1)?,
+                enabled: row.get(2)?,
             })
         })
         .map_err(error)?
@@ -70,37 +129,32 @@ pub fn identities(path: &Path) -> Result<Vec<Identity>, String> {
 }
 
 pub fn save_identity(path: &Path, identity: Identity) -> Result<Identity, String> {
-    let platform = identity.platform.trim();
     let text = identity.text.trim();
-    if platform.is_empty() || text.is_empty() {
-        return Err("平台名称和水印文字不能为空".into());
-    }
+    crate::layout::validate_text(text)?;
     let db = connection(path)?;
     if identity.id == 0 {
         db.execute(
-            "INSERT INTO identities(platform,text,enabled) VALUES(?1,?2,?3)",
-            params![platform, text, identity.enabled],
+            "INSERT INTO identities(platform,text,enabled,sort_order) VALUES('',?1,?2,(SELECT COALESCE(MAX(sort_order),0)+1 FROM identities))",
+            params![text, identity.enabled],
         )
         .map_err(error)?;
         Ok(Identity {
             id: db.last_insert_rowid(),
-            platform: platform.into(),
             text: text.into(),
             enabled: identity.enabled,
         })
     } else {
         if db
             .execute(
-                "UPDATE identities SET platform=?1,text=?2,enabled=?3 WHERE id=?4",
-                params![platform, text, identity.enabled, identity.id],
+                "UPDATE identities SET text=?1,enabled=?2 WHERE id=?3",
+                params![text, identity.enabled, identity.id],
             )
             .map_err(error)?
             == 0
         {
-            return Err("平台身份不存在".into());
+            return Err("水印信息不存在".into());
         }
         Ok(Identity {
-            platform: platform.into(),
             text: text.into(),
             ..identity
         })
@@ -158,27 +212,26 @@ pub fn validate_settings(value: &Settings) -> Result<(), String> {
 pub fn identity(path: &Path, id: i64) -> Result<Identity, String> {
     connection(path)?
         .query_row(
-            "SELECT id,platform,text,enabled FROM identities WHERE id=?1",
+            "SELECT id,text,enabled FROM identities WHERE id=?1",
             [id],
             |row| {
                 Ok(Identity {
                     id: row.get(0)?,
-                    platform: row.get(1)?,
-                    text: row.get(2)?,
-                    enabled: row.get(3)?,
+                    text: row.get(1)?,
+                    enabled: row.get(2)?,
                 })
             },
         )
         .optional()
         .map_err(error)?
-        .ok_or_else(|| "请选择有效的平台身份".into())
+        .ok_or_else(|| "请选择有效的水印信息".into())
 }
 
 pub fn histories(path: &Path) -> Result<Vec<HistorySummary>, String> {
     let db = connection(path)?;
     let mut stmt = db
         .prepare(
-            "SELECT h.id,h.original_name,h.output_path,h.platform,COUNT(w.number),h.created_at
+            "SELECT h.id,h.original_name,h.output_path,h.platform,COUNT(w.number),h.created_at,COUNT(DISTINCT w.frame_index)
          FROM histories h LEFT JOIN watermarks w ON w.history_id=h.id
          GROUP BY h.id ORDER BY h.created_at DESC",
         )
@@ -192,11 +245,12 @@ pub fn histories(path: &Path) -> Result<Vec<HistorySummary>, String> {
                 row.get::<_, String>(3)?,
                 row.get::<_, usize>(4)?,
                 row.get::<_, i64>(5)?,
+                row.get::<_, usize>(6)?,
             ))
         })
         .map_err(error)?;
     rows.map(|row| {
-        let (id, original_name, output_path, platform, watermark_count, created_at) =
+        let (id, original_name, output_path, platform, watermark_count, created_at, event_count) =
             row.map_err(error)?;
         Ok(HistorySummary {
             id,
@@ -205,6 +259,7 @@ pub fn histories(path: &Path) -> Result<Vec<HistorySummary>, String> {
             output_path,
             platform,
             watermark_count,
+            event_count,
             created_at,
         })
     })
@@ -214,9 +269,9 @@ pub fn histories(path: &Path) -> Result<Vec<HistorySummary>, String> {
 pub fn history(path: &Path, id: i64) -> Result<HistoryDetail, String> {
     let db = connection(path)?;
     let mut detail = db.query_row(
-        "SELECT id,original_name,original_path,output_name,output_path,platform,watermark_text,interval,seed,width,height,duration,fps,video_codec,audio_codec,created_at FROM histories WHERE id=?1",
+        "SELECT id,original_name,original_path,output_name,output_path,platform,watermark_text,interval,seed,width,height,duration,fps,video_codec,audio_codec,created_at,plan_json FROM histories WHERE id=?1",
         [id], |row| Ok(HistoryDetail {
-            id: row.get(0)?, original_name: row.get(1)?, original_path: row.get(2)?, output_name: row.get(3)?, output_path: row.get(4)?, platform: row.get(5)?, watermark_text: row.get(6)?, interval: row.get(7)?, seed: row.get(8)?, width: row.get(9)?, height: row.get(10)?, duration: row.get(11)?, fps: row.get(12)?, video_codec: row.get(13)?, audio_codec: row.get(14)?, created_at: row.get(15)?, file_exists: false, watermarks: vec![]
+            id: row.get(0)?, original_name: row.get(1)?, original_path: row.get(2)?, output_name: row.get(3)?, output_path: row.get(4)?, platform: row.get(5)?, watermark_text: row.get(6)?, interval: row.get(7)?, seed: row.get(8)?, width: row.get(9)?, height: row.get(10)?, duration: row.get(11)?, fps: row.get(12)?, video_codec: row.get(13)?, audio_codec: row.get(14)?, created_at: row.get(15)?, file_exists: false, watermarks: vec![], plan: WatermarkPlan { algorithm_version:1, mode:"simultaneous".into(), texts:vec![row.get(6)?],event_count:0,marks:vec![], config:None }
         }),
     ).optional().map_err(error)?.ok_or_else(|| "历史记录不存在".to_string())?;
     detail.file_exists = Path::new(&detail.output_path).exists();
@@ -233,11 +288,27 @@ pub fn history(path: &Path, id: i64) -> Result<HistoryDetail, String> {
                 font_size: row.get(6)?,
                 opacity: row.get(7)?,
                 text: row.get(8)?,
+                event: row.get(0)?,
+                width: 0,
+                height: 0,
+                rendered_text: row.get(8)?,
             })
         })
         .map_err(error)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(error)?;
+    let json: Option<String> = db
+        .query_row("SELECT plan_json FROM histories WHERE id=?1", [id], |r| {
+            r.get(0)
+        })
+        .map_err(error)?;
+    if let Some(json) = json {
+        detail.plan = serde_json::from_str(&json).map_err(error)?;
+        detail.watermarks = detail.plan.marks.clone();
+    } else {
+        detail.plan.event_count = detail.watermarks.len();
+        detail.plan.marks = detail.watermarks.clone();
+    }
     Ok(detail)
 }
 
@@ -245,8 +316,7 @@ pub fn insert_history(
     path: &Path,
     media: &MediaInfo,
     output: &Path,
-    platform: &str,
-    text: &str,
+    plan: &WatermarkPlan,
     interval: f64,
     seed: &str,
     watermarks: &[Watermark],
@@ -263,9 +333,14 @@ pub fn insert_history(
         .as_secs() as i64;
     tx.execute(
         "INSERT INTO histories(original_name,original_path,output_name,output_path,platform,watermark_text,interval,seed,width,height,duration,fps,video_codec,audio_codec,created_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
-        params![media.file_name, media.path, output_name, output.to_string_lossy(), platform, text, interval, seed, media.width, media.height, media.duration, media.fps, media.video_codec, media.audio_codec, created_at],
+        params![media.file_name, media.path, output_name, output.to_string_lossy(), "", plan.texts.join("\n"), interval, seed, media.width, media.height, media.duration, media.fps, media.video_codec, media.audio_codec, created_at],
     ).map_err(error)?;
     let id = tx.last_insert_rowid();
+    tx.execute(
+        "UPDATE histories SET plan_json=?1 WHERE id=?2",
+        params![serde_json::to_string(plan).map_err(error)?, id],
+    )
+    .map_err(error)?;
     {
         let mut stmt = tx.prepare("INSERT INTO watermarks(history_id,number,timestamp,pts,frame_index,x,y,font_size,opacity,text) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)").map_err(error)?;
         for mark in watermarks {
@@ -290,4 +365,82 @@ pub fn insert_history(
 
 fn error(error: impl std::fmt::Display) -> String {
     error.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn migration_crud_order_and_history_snapshots_survive_restart() {
+        let dir = std::env::temp_dir().join(format!("framemark-db-{}", crate::layout::new_seed()));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("test.sqlite3");
+        initialize(&path).unwrap();
+        let db = Connection::open(&path).unwrap();
+        db.execute_batch("ALTER TABLE identities DROP COLUMN sort_order;
+            ALTER TABLE histories DROP COLUMN plan_json; PRAGMA user_version=0;
+            INSERT INTO identities VALUES(7,'Bilibili','UID:旧数据',1);
+            INSERT INTO histories VALUES(1,'demo.mp4','missing.mp4','marked.mp4','missing-output.mp4','Bilibili','UID:旧数据',3,'ABCD',640,360,5,30,'h264','aac',1);
+            INSERT INTO watermarks VALUES(1,1,1.2,36,36,50,60,16,0.45,'UID:旧数据');").unwrap();
+        drop(db);
+        initialize(&path).unwrap();
+        initialize(&path).unwrap();
+        assert_eq!(identities(&path).unwrap().len(), 1);
+        assert_eq!(identities(&path).unwrap()[0].text, "UID:旧数据");
+        let created = save_identity(
+            &path,
+            Identity {
+                id: 0,
+                text: "  © 公司\nhttps://example.test @name  ".into(),
+                enabled: true,
+            },
+        )
+        .unwrap();
+        assert_eq!(created.text, "© 公司\nhttps://example.test @name");
+        let copy = save_identity(
+            &path,
+            Identity {
+                id: 0,
+                ..created.clone()
+            },
+        )
+        .unwrap();
+        let edited = save_identity(
+            &path,
+            Identity {
+                text: "自定义修改".into(),
+                ..copy.clone()
+            },
+        )
+        .unwrap();
+        assert_eq!(edited.text, "自定义修改");
+        reorder_identities(&path, &[copy.id, 7, created.id]).unwrap();
+        assert!(reorder_identities(&path, &[7, 7, created.id]).is_err());
+        let mut setting = settings(&path).unwrap();
+        setting.selected_ids = vec![copy.id, created.id];
+        save_settings(&path, &setting).unwrap();
+        initialize(&path).unwrap();
+        assert_eq!(
+            settings(&path).unwrap().selected_ids,
+            vec![copy.id, created.id]
+        );
+        assert_eq!(identities(&path).unwrap()[0].id, copy.id);
+        delete_identity(&path, 7).unwrap();
+        let old = history(&path, 1).unwrap();
+        assert_eq!(old.watermarks[0].text, "UID:旧数据");
+        assert_eq!(old.plan.algorithm_version, 1);
+        assert!(!old.file_exists);
+        assert_eq!(histories(&path).unwrap()[0].event_count, 1);
+        assert!(save_identity(
+            &path,
+            Identity {
+                id: 0,
+                text: " ".into(),
+                enabled: true
+            }
+        )
+        .is_err());
+        drop(old);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

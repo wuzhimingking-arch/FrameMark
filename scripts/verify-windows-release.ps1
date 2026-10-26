@@ -1,5 +1,6 @@
 ﻿$ErrorActionPreference = 'Stop'
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$skipLaunch = $env:FRAMEMARK_VERIFY_NO_GUI -eq '1'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $target = 'x86_64-pc-windows-msvc'
@@ -39,16 +40,22 @@ New-Item -ItemType Directory -Force -Path $verificationRoot | Out-Null
 try {
     $isolatedInstaller = Join-Path $verificationRoot (Split-Path -Leaf $installer)
     Copy-Item -LiteralPath $installer -Destination $isolatedInstaller
-    $install = Start-Process -FilePath $isolatedInstaller -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait
+    $install = Start-Process -FilePath $isolatedInstaller -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait -WindowStyle Hidden
     if ($install.ExitCode) { throw "安装程序退出码：$($install.ExitCode)" }
 
-    foreach ($relative in 'frame-mark.exe', 'ffmpeg.exe', 'ffprobe.exe', 'resources\NotoSansSC-Regular.ttf', 'resources\licenses\FFmpeg-GPLv3.txt', 'resources\licenses\Noto-OFL.txt', 'uninstall.exe') {
+    foreach ($relative in 'frame-mark.exe', '帧印.lnk', 'ffmpeg.exe', 'ffprobe.exe', 'resources\NotoSansSC-Regular.ttf', 'resources\licenses\FFmpeg-GPLv3.txt', 'resources\licenses\Noto-OFL.txt', 'uninstall.exe') {
         if (-not (Test-Path -LiteralPath (Join-Path $installDir $relative))) { throw "安装目录缺少：$relative" }
     }
+    $rootShortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $installDir '帧印.lnk'))
+    if ($rootShortcut.TargetPath -ne (Join-Path $installDir 'frame-mark.exe')) { throw '安装根目录快捷方式目标错误' }
+    if ($rootShortcut.IconLocation -notlike "*frame-mark.exe*") { throw '安装根目录快捷方式没有使用主程序图标' }
+    $resources = @(& $readobj.Source --coff-resources (Join-Path $installDir 'frame-mark.exe'))
+    if (-not ($resources -match 'ICON')) { throw '主程序缺少内嵌图标资源' }
 
     $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
     if (-not (Get-ChildItem -LiteralPath $startMenu -Recurse -Filter '帧印.lnk' -ErrorAction SilentlyContinue)) { throw '开始菜单缺少帧印快捷方式' }
 
+    if (-not $skipLaunch) {
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = Join-Path $installDir 'frame-mark.exe'
     $startInfo.WorkingDirectory = $installDir
@@ -65,8 +72,9 @@ try {
     if (-not $started) { throw '已安装程序未能打开主界面' }
     Stop-Process -Id $process.Id -Force
     $process.WaitForExit()
+    }
 
-    $uninstall = Start-Process -FilePath (Join-Path $installDir 'uninstall.exe') -ArgumentList '/S' -PassThru -Wait
+    $uninstall = Start-Process -FilePath (Join-Path $installDir 'uninstall.exe') -ArgumentList '/S' -PassThru -Wait -WindowStyle Hidden
     if ($uninstall.ExitCode) { throw "卸载程序退出码：$($uninstall.ExitCode)" }
     Start-Sleep -Seconds 2
     if (Test-Path -LiteralPath $installDir) { throw '卸载后安装目录仍存在' }
@@ -74,10 +82,11 @@ try {
     Write-Host "frame-mark.exe 动态依赖审计通过：$($audits['frame-mark.exe'] -join ', ')"
     Write-Host 'frame-mark.exe Windows GUI 子系统审计通过。'
     Write-Host "NSIS WebView2 安装模式：$mode"
-    Write-Host '安装包副本、干净 PATH、独立临时安装目录启动验证通过。'
+    if ($skipLaunch) { Write-Host '安装、根目录入口、资源和卸载检查通过；按后台验证要求跳过 GUI 启动。' }
+    else { Write-Host '安装包副本、干净 PATH、独立临时安装目录启动验证通过。' }
 } finally {
     if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
     $uninstaller = Join-Path $installDir 'uninstall.exe'
-    if (Test-Path -LiteralPath $uninstaller) { Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait }
+    if (Test-Path -LiteralPath $uninstaller) { Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -WindowStyle Hidden }
     if (Test-Path -LiteralPath $verificationRoot) { Remove-Item -LiteralPath $verificationRoot -Recurse -Force }
 }
