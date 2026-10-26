@@ -5,7 +5,7 @@
   "version": "1.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 1420 --strictPort",
     "build": "tsc && vite build",
     "test:ui": "node scripts/test-ui.mjs",
     "audit:publication": "node scripts/audit-publication.mjs",
