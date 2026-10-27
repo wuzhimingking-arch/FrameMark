@@ -2,7 +2,10 @@
 
 ## FFmpeg
 
-发行构建使用 Gyan.dev 的 FFmpeg 7.1.1 Essentials 静态构建。FFmpeg 是独立 sidecar，不与本程序链接。当前构建启用了 GPLv3 组件，完整许可证随安装包位于 `resources/licenses/FFmpeg-GPLv3.txt`；构建配置及对应源码入口见 gyan.dev 的发行说明。
+发行构建使用 Gyan.dev 的 FFmpeg 7.1.1 Essentials 静态构建。FFmpeg 是独立 sidecar，不与本程序链接。
+实测 `ffmpeg -L` 的适用许可证为 **GPL-3.0-or-later**；完整 GPLv3 文本随安装包位于
+`resources/licenses/FFmpeg-GPLv3.txt`。Copyright (c) 2000–2025 the FFmpeg developers；
+各源文件和依赖保留各自版权。构建配置及源码入口见下方审查资料。
 
 - 构建发布页：[GyanD/codexffmpeg 7.1.1](https://github.com/GyanD/codexffmpeg/releases/tag/7.1.1)。
 - FFmpeg 对应源码提交：[db69d06eeeab4f46da15030a80d539efb4503ca8](https://github.com/FFmpeg/FFmpeg/commit/db69d06eeeab4f46da15030a80d539efb4503ca8)。
@@ -10,6 +13,11 @@
   NVENC、libvpl/QSV、AMF，没有 `--enable-nonfree`。
 - 当前 ffmpeg.exe SHA-256：`B90225987BDD042CCA09A1EFB5E34E9848F2D1DBF5FBCD388753A44145522997`。
 - 当前 ffprobe.exe SHA-256：`05E8FA639450F8191635192871AE37A3EC3E4638FA12F3B7D49C6522BA16A8ED`。
+- [合规审查与剩余清单](docs/FFMPEG_COMPLIANCE.md)、[源码归档 URL/校验值](docs/compliance/ffmpeg-7.1.1/manifest.json)、
+  [原包构建/依赖说明](docs/compliance/ffmpeg-7.1.1/UPSTREAM-README.txt)、
+  [该提交的原始许可说明](docs/compliance/ffmpeg-7.1.1/LICENSE.md)。
+- FFmpeg 含来自 Independent JPEG Group 的代码：This software is based in part on the work of the Independent JPEG Group.
+  该致谢不表示已确认所有依赖的版权声明齐全，亦不表示上游未应用补丁。
 - 自有源码采用 MIT 不改变 FFmpeg 的 GPLv3 义务。链接源码主页或附上 GPL 文本，
   不能代替与所分发二进制匹配的完整对应源码、依赖与构建材料。
 - **公开二进制发布阻塞**：当前尚未备齐该第三方静态构建及所含库的完整对应源码和构建材料。

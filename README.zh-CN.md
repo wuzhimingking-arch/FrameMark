@@ -120,8 +120,21 @@ HDR/Dolby Vision 色彩不保证无损；不含避脸、避字幕、剪辑、Log
 
 当前事实见 [项目上下文](docs/PROJECT_CONTEXT.md)，测试证据见 [验证记录](docs/VALIDATION.md)。
 
+## 第三方组件与源码获取
+
+- 随包 Gyan FFmpeg/ffprobe 7.1.1 Essentials 为 **GPL-3.0-or-later**，以独立进程调用，
+  不链接进 FrameMark。[FFmpeg 核心对应提交](https://github.com/FFmpeg/FFmpeg/tree/db69d06eeeab4f46da15030a80d539efb4503ca8)。
+- [源码清单](docs/compliance/ffmpeg-7.1.1/manifest.json) 提供 FFmpeg 和四个已定位库的
+  源码归档 URL 与 SHA-256。它们**尚非完整对应源码包**，其余依赖、补丁和必要构建脚本仍待补齐。
+- Noto Sans CJK SC 为 **SIL OFL 1.1**；Tauri、应用依赖保留各自许可，见
+  [第三方声明](THIRD_PARTY_NOTICES.md)。独立进程调用不免除 FFmpeg 的再分发义务。
+
+[1.1.0 合规审查](docs/FFMPEG_COMPLIANCE.md) 记录原安装包指纹、源码/构建对应关系、
+已取得材料、测试及剩余阻塞。`npm run audit:ffmpeg` 检查本地留存材料；
+退出码 2 表示完整性通过但公开分发仍被阻塞，不代表获准发布。
+
 ## 开源协议
 
 FrameMark 自有源码、文档和项目图标采用 [MIT](LICENSE)。
-FFmpeg sidecar 为 GPLv3，Noto 字体为 SIL OFL 1.1，各自保留许可证，
+FFmpeg sidecar 为 GPL-3.0-or-later，Noto 字体为 SIL OFL 1.1，各自保留许可证，
 不能把全部打包组件称为 MIT。详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

@@ -1,0 +1,77 @@
+{
+  "dossierVersion": "1.1.0-compliance.1",
+  "status": "BLOCKED",
+  "checkedOn": "2026-10-28",
+  "productVersion": "1.1.0",
+  "appCommit": "e104405e8aeba5106ddc0717ff572cc8da37a48e",
+  "license": "GPL-3.0-or-later",
+  "integration": "independent subprocess; no libav linking",
+  "installer": {
+    "file": "帧印_1.1.0_x64-setup.exe",
+    "bytes": 58605001,
+    "sha256": "21ca2c87d52c661500a3f38c0cb41f6a0180611d290642ad0a55ee2ab1fe5bb8"
+  },
+  "binaries": {
+    "frame-mark.exe": "20874909ffc8fc21cc9171b0b9a7b0dd076d9dddc2b6086b5ebdc40d8c0d3018",
+    "ffmpeg.exe": "b90225987bdd042cca09a1efb5e34e9848f2d1dbf5fbcd388753a44145522997",
+    "ffprobe.exe": "05e8fa639450f8191635192871ae37a3ec3e4638fa12f3b7d49c6522ba16a8ed"
+  },
+  "upstreamArchive": {
+    "file": "upstream-7.1.1.7z",
+    "url": "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.7z",
+    "bytes": 28141686,
+    "sha256": "92216e5b6b9e4e4163875a9d474ba32f1f2af625151c0e02011bf4a7daf5a959"
+  },
+  "collectedSourceArchives": [
+    {
+      "component": "FFmpeg",
+      "revision": "db69d06eeeab4f46da15030a80d539efb4503ca8",
+      "evidence": "Gyan 7.1.1 release body and original package README; n7.1.1 tag resolves to this commit",
+      "file": "ffmpeg-db69d06eeeab4f46da15030a80d539efb4503ca8.tar.gz",
+      "url": "https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/db69d06eeeab4f46da15030a80d539efb4503ca8",
+      "sha256": "173ba614d8636491106cba08d79db469b5dee4b479388bc4fbcead8ca1fb79b1"
+    },
+    {
+      "component": "x264",
+      "revision": "373697b467f7cd0af88f1e9e32d4f10540df4687",
+      "evidence": "original README v0.164.3204; shipped executable contains r3204 373697b; GitHub mirror commit resolved",
+      "file": "x264-373697b467f7cd0af88f1e9e32d4f10540df4687.tar.gz",
+      "url": "https://codeload.github.com/mirror/x264/tar.gz/373697b467f7cd0af88f1e9e32d4f10540df4687",
+      "sha256": "ecf458e716d1f2f14db3f83575165df4911462933fff9863c3b3da60fe802edf"
+    },
+    {
+      "component": "x265",
+      "revision": "0e0eee580c2437fa37a951f121cf1becc2d4b3ca",
+      "evidence": "original README 4.1-110-g0e0eee580; VideoLAN mirror commit resolved",
+      "file": "x265-0e0eee580c2437fa37a951f121cf1becc2d4b3ca.tar.gz",
+      "url": "https://codeload.github.com/videolan/x265/tar.gz/0e0eee580c2437fa37a951f121cf1becc2d4b3ca",
+      "sha256": "a91abff7f900fe5506a96e211e23f8745821879bb7ca87073d016f28f155475c"
+    },
+    {
+      "component": "vid.stab",
+      "revision": "d2d55a8988c8ed34a9f373ef53481bfbadb9b9fb",
+      "evidence": "original README v1.1.1-14-gd2d55a8; upstream commit resolved",
+      "file": "vid.stab-d2d55a8988c8ed34a9f373ef53481bfbadb9b9fb.tar.gz",
+      "url": "https://codeload.github.com/georgmartius/vid.stab/tar.gz/d2d55a8988c8ed34a9f373ef53481bfbadb9b9fb",
+      "sha256": "68878c6f08b52899483ebc5b3f6430409d59d3505123a629891fdf5aef08a4a0"
+    },
+    {
+      "component": "Rubber Band",
+      "revision": "afdb914d0b853f445ef4582720966701527ade5b",
+      "evidence": "original README v1.8.1; upstream tag resolves to this commit",
+      "file": "rubberband-afdb914d0b853f445ef4582720966701527ade5b.tar.gz",
+      "url": "https://codeload.github.com/breakfastquay/rubberband/tar.gz/afdb914d0b853f445ef4582720966701527ade5b",
+      "sha256": "75b57d116642174eeb45b29ce932647121872185028b2cb02d16e86faccaf699"
+    }
+  ],
+  "sourceQualification": "Unmodified upstream snapshots at observed revisions, NOT a complete or publisher-confirmed corresponding-source bundle; patches and remaining dependencies are unconfirmed.",
+  "unknownDirectDependencyVersions": [
+    "fontconfig", "iconv", "gnutls", "libxml2", "gmp", "bzlib", "lzma", "zlib", "libopenjpeg"
+  ],
+  "blockers": [
+    "Confirm exact source versions, patches and notices for all included dependencies, including transitive dependencies and any applicable exceptions.",
+    "Obtain required scripts/configuration controlling the actual FFmpeg and dependency builds; -buildconf and the package README alone are not those scripts.",
+    "Assemble and review a complete corresponding-source distribution with clear availability directions alongside the public installer before enabling its download."
+  ],
+  "upstreamRequestGuidance": "https://github.com/GyanD/codexffmpeg/issues/249#issuecomment-6264377917"
+}

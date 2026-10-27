@@ -1,0 +1,4 @@
+# Preserve original third-party documents, including upstream whitespace.
+docs/compliance/ffmpeg-7.1.1/UPSTREAM-README.txt -text -whitespace
+docs/compliance/ffmpeg-7.1.1/COPYING.* -text
+docs/compliance/ffmpeg-7.1.1/LICENSE.md -text

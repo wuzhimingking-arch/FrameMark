@@ -9,6 +9,7 @@
     "build": "tsc && vite build",
     "test:ui": "node scripts/test-ui.mjs",
     "audit:publication": "node scripts/audit-publication.mjs",
+    "audit:ffmpeg": "node scripts/audit-ffmpeg-compliance.mjs",
     "prepare:assets": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-assets.ps1",
     "tauri": "tauri",
     "tauri:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1",

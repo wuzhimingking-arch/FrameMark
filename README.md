@@ -137,9 +137,27 @@ No face/subtitle avoidance, editing, logo watermarks or piracy scanning is inclu
 
 See [project context](docs/PROJECT_CONTEXT.md) and [validation evidence](docs/VALIDATION.md).
 
+## Third-party components and source access
+
+- The bundled Gyan FFmpeg/ffprobe 7.1.1 Essentials binaries are **GPL-3.0-or-later**,
+  invoked as independent processes, not linked into FrameMark. Their FFmpeg core
+  source is [commit db69d06](https://github.com/FFmpeg/FFmpeg/tree/db69d06eeeab4f46da15030a80d539efb4503ca8).
+- [The compliance manifest](docs/compliance/ffmpeg-7.1.1/manifest.json) lists exact
+  source archive URLs and SHA-256 values for FFmpeg and four identified libraries.
+  These upstream snapshots are **not yet a complete corresponding-source bundle**;
+  remaining dependencies, patches and necessary build scripts are unresolved.
+- Noto Sans CJK SC uses **SIL OFL 1.1**; Tauri and application dependencies retain
+  their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md).
+
+The [1.1.0 compliance review](docs/FFMPEG_COMPLIANCE.md) records the unchanged
+installer fingerprint, source/build linkage, collected materials, verification and
+remaining blockers. `npm run audit:ffmpeg` checks the retained local artifacts;
+exit code 2 means integrity checks passed but public binary distribution is blocked.
+An independent-process integration does not waive FFmpeg redistribution obligations.
+
 ## License
 
 FrameMark's original source, documentation and project icon are under the
 [MIT License](LICENSE). Third-party components keep their own licenses:
-the pinned FFmpeg sidecar is GPLv3 and the Noto font is SIL OFL 1.1.
+the pinned FFmpeg sidecar is GPL-3.0-or-later and the Noto font is SIL OFL 1.1.
 They are not relicensed as MIT. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
