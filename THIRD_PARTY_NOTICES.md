@@ -1,6 +1,19 @@
 # 第三方组件说明
 
-## FFmpeg
+## 1.1.1 自建 FFmpeg
+
+FrameMark 1.1.1 使用官方 FFmpeg 7.1.1 源码自行构建的 Windows sidecar，通过独立进程调用，不与本程序链接。启用 GPL 与 version3，FFmpeg 可执行程序按 GPL-3.0-or-later 分发。完整对应源码、依赖源码、构建脚本、配置和 SHA-256 清单随同版本提供于 [1.1.1 Release](https://github.com/wuzhimingking-arch/FrameMark/releases/tag/v1.1.1)。固定输入见 `scripts/ffmpeg-sources.json`，构建说明见 `docs/build/FFMPEG_WINDOWS.md`。
+
+实际外部依赖为 x264 r3204/373697b（GPL-2.0-or-later）、FreeType 2.13.3（FTL）、HarfBuzz 10.0.1（MIT 风格）、nv-codec-headers 12.2.72.0（MIT）、AMF 1.4.35 头文件（MIT）、oneVPL dispatcher 2.14.0（MIT）。原始版权和许可随安装包保留。GCC 运行库按其 GPL 与 GCC Runtime Library Exception 分发，MinGW-w64 运行库保留原始声明；不限制用户依据各组件许可证复制、修改及再分发。硬件驱动由系统提供，不随包分发。
+
+Portions of this software are copyright © 1996–2024 The FreeType Project (www.freetype.org). All rights reserved.
+This software is based in part on the work of the Independent JPEG Group.
+
+PNG 预览使用 zlib 1.3.1（zlib 许可），保留原始 LICENSE。NVIDIA 编码/解码头文件的原始版权和许可随完整对应源码保留。
+
+新构建不含旧 Gyan 包的 x265、vid.stab、Rubber Band 等外部库。安装包未进行 Authenticode 签名，Windows/SmartScreen 可能显示未知发布者；不声称已签名或不会出现安全提示。
+
+## 1.1.0 历史 FFmpeg（不公开分发旧二进制）
 
 发行构建使用 Gyan.dev 的 FFmpeg 7.1.1 Essentials 静态构建。FFmpeg 是独立 sidecar，不与本程序链接。
 实测 `ffmpeg -L` 的适用许可证为 **GPL-3.0-or-later**；完整 GPLv3 文本随安装包位于

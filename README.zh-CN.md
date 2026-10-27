@@ -6,7 +6,7 @@
 品牌、版权声明、网站地址等自由文字，在每个时间区间内随机选择一个真实视频帧，
 把水印写入安全区域中的随机位置，增加批量寻找和清除版权标记的工作量。
 
-当前版本 **1.1.0**，发行目标是 Windows 10/11 x64。macOS 尚未构建验证，属于后续计划。
+当前版本 **1.1.1**，发行目标是 Windows 10/11 x64。macOS 尚未构建验证，属于后续计划。
 
 ## 功能
 
@@ -42,7 +42,10 @@
 
 ## 真实界面
 
-当前源码预发布尚未公开桌面截图，不以设计稿或 IPC 测试数据画面冒充桌面实拍。可运行 `npm run test:ui` 检查真实前端交互；原生渲染由 Rust/FFmpeg 测试验证。
+以下为 Windows 1.1.1 真实界面：HEVC 素材、原生 FFmpeg 水印预览与 NVIDIA 导出。
+
+![原生预览](docs/screenshots/framemark-1.1.1-preview.png)
+![导出完成](docs/screenshots/framemark-1.1.1-complete.png)
 
 ## 使用方法
 
@@ -58,11 +61,9 @@
 
 ## 下载与发布状态
 
-当前公开仓库提供源码，可按下述步骤自行构建。这里不提供不存在的公开安装包下载链接。
+Windows 安装包与完整对应第三方源码见 [1.1.1 Release](https://github.com/wuzhimingking-arch/FrameMark/releases/tag/v1.1.1)。安装包未进行数字签名，Windows/SmartScreen 可能提示未知发布者。
 
-本地已验证的安装包包含 GPLv3 FFmpeg。完整对应 FFmpeg/依赖源码和构建材料尚未备齐，
-因此暂缓公开上传安装包；源码预发布不代表稳定二进制发行。
-详细分发边界见 [第三方组件说明](THIRD_PARTY_NOTICES.md)。
+本版本用可控自建 GPLv3-or-later FFmpeg 替换旧 Gyan 二进制，公开全部实际依赖源码、构建脚本、配置、许可证和 SHA-256；旧 1.1.0 安装包不补发。详细说明见 [第三方组件说明](THIRD_PARTY_NOTICES.md) 与 [自建步骤](docs/build/FFMPEG_WINDOWS.md)。
 
 ## Windows 开发与构建
 
@@ -77,7 +78,7 @@ npm run prepare:assets
 npm run tauri -- dev --target x86_64-pc-windows-msvc
 ```
 
-`prepare:assets` 会准备固定 FFmpeg 7.1.1 Essentials sidecar、Noto Sans SC 字体和许可证。
+`prepare:assets` 会准备哈希固定的自建 FFmpeg 7.1.1 sidecar、Noto Sans SC 字体和许可证。
 最终用户无需自行安装 FFmpeg、开发工具或配置 PATH。
 
 ```powershell

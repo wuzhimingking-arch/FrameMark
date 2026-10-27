@@ -1,0 +1,8 @@
+{
+  "ffmpegVersion": "7.1.1",
+  "productVersion": "1.1.1",
+  "license": "GPL-3.0-or-later",
+  "url": "https://github.com/wuzhimingking-arch/FrameMark/releases/download/v1.1.1/ffmpeg-framemark-1.1.1-windows-x64.zip",
+  "ffmpeg": "f3bc8375340268beb41f92d887175928dde5720e4cf4de43eaf4d46c73b200f0",
+  "ffprobe": "cd7ac5393a7323f1325323003d5f05b8a4acea74df6f3a2d39304f141e2c18a6"
+}

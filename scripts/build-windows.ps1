@@ -42,7 +42,6 @@ try {
 }
 
 if (-not (Test-Path -LiteralPath $bundle)) { throw "安装包未生成：$bundle" }
-if (Test-Path -LiteralPath $distDir) { Remove-Item -LiteralPath $distDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $distDir | Out-Null
 Copy-Item -LiteralPath $bundle -Destination $distDir -Force
 Write-Host "Windows 安装包：$(Join-Path $distDir (Split-Path -Leaf $bundle))"

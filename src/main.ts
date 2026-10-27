@@ -53,7 +53,7 @@ function shell(content: string) {
           <button class="nav-item ${route === "settings" ? "active" : ""}" data-route="settings"><span>⚙</span>设置</button>
         </nav>
         <div class="privacy"><span>●</span><div><strong>100% 本地处理</strong><small>原视频不离开你的电脑</small></div></div>
-        <div class="version">V1.1.0</div>
+        <div class="version">V1.1.1</div>
       </aside>
       <main class="content">${content}</main>
     </div>
@@ -248,10 +248,10 @@ function randomPreview() {
     if(!isTauri||!media||!image) return;
     if(!selectedIds.length) { image.hidden=true; return; }
     try {
-      const bytes=await invoke<ArrayBuffer>("preview_watermarks",{request:processRequest(),next:previewNext});
+      const bytes=await invoke<ArrayBuffer | number[]>("preview_watermarks",{request:processRequest(),next:previewNext});
       if(revision!==previewRevision || !image.isConnected) return;
       if(previewUrl) URL.revokeObjectURL(previewUrl);
-      previewUrl=URL.createObjectURL(new Blob([bytes],{type:"image/png"}));
+      previewUrl=URL.createObjectURL(new Blob([Array.isArray(bytes) ? new Uint8Array(bytes) : bytes],{type:"image/png"}));
       image.src=previewUrl; image.hidden=false;
     } catch(error) { if(revision===previewRevision) { image.hidden=true; toast(errorText(error),true); } }
   },180);
@@ -325,7 +325,7 @@ function renderSettings() {
       <label class="switch-line"><input name="randomOpacity" type="checkbox" ${data.settings.randomOpacity ? "checked" : ""}> 默认开启随机透明度</label><label class="switch-line"><input name="randomSize" type="checkbox" ${data.settings.randomSize ? "checked" : ""}> 默认开启随机大小</label>
       <label>视频编码加速<select name="encoder">${data.encodingOptions.map((option) => `<option value="${option.id}" ${option.id === data.settings.encoder ? "selected" : ""} ${option.available ? "" : "disabled"}>${html(option.label)}${option.available ? "" : "（当前设备不可用）"}</option>`).join("")}</select><small>自动模式优先 NVIDIA、Intel、AMD，硬件初始化失败会自动回退 CPU。</small></label>
       <div class="output-setting"><span>默认输出目录</span><button id="settings-output" type="button" class="path-button">${html(data.settings.outputDir || "原视频目录")}</button></div><button class="primary" type="submit">保存默认设置</button>
-    </form><section class="card settings-card about-card"><h2>隐私与日志</h2><p>视频、截图、水印内容 和历史记录均不会上传。运行日志仅保存在本机。</p><button id="open-logs" class="secondary">打开日志目录</button><div class="about-line"><span>帧印</span><strong>V1.1.0</strong></div></section></div>`);
+    </form><section class="card settings-card about-card"><h2>隐私与日志</h2><p>视频、截图、水印内容 和历史记录均不会上传。运行日志仅保存在本机。</p><button id="open-logs" class="secondary">打开日志目录</button><div class="about-line"><span>帧印</span><strong>V1.1.1</strong></div></section></div>`);
   const fontSelect = document.querySelector<HTMLSelectElement>("[name=fontSize]"); if (fontSelect) fontSelect.value = data.settings.fontSize;
   bindSettings();
 }

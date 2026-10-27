@@ -8,7 +8,7 @@ inside each time interval, at independent random coordinates inside safe margins
 It aims to increase the effort of finding and removing every identity mark while
 keeping interruption during ordinary playback brief.
 
-Current version: **1.1.0**. Windows 10/11 x64 is the release target.
+Current version: **1.1.1**. Windows 10/11 x64 is the release target.
 macOS is planned and has not been built or validated.
 
 ## Features
@@ -47,7 +47,10 @@ It does not guarantee prevention of reposting or legal proof of ownership.
 
 ## Screenshots
 
-Desktop screenshots are pending for this source pre-release. No design mockup or IPC-fixture image is presented as a desktop screenshot. The headless frontend regression is runnable with `npm run test:ui`; real native rendering is covered by Rust/FFmpeg tests.
+Real Windows 1.1.1 screenshots (HEVC sample, native FFmpeg preview and NVIDIA export):
+
+![Native preview](docs/screenshots/framemark-1.1.1-preview.png)
+![Completed export](docs/screenshots/framemark-1.1.1-complete.png)
 
 ## Use
 
@@ -64,13 +67,12 @@ The application and installer share the included project icon.
 
 ## Download and distribution status
 
-This public repository distributes **source code**. Build Windows locally using
-the instructions below. No public installer download is claimed here.
-
-The locally tested installer bundles a GPLv3 FFmpeg build. A public installer
-release is withheld until its complete corresponding FFmpeg/dependency source and
-build materials are assembled and checked. A source pre-release must not be
-mistaken for a stable binary release. See [third-party notes](THIRD_PARTY_NOTICES.md).
+Download the Windows installer and complete corresponding third-party source from
+[the 1.1.1 release](https://github.com/wuzhimingking-arch/FrameMark/releases/tag/v1.1.1).
+The installer is unsigned; Windows may show an unknown-publisher or SmartScreen warning.
+The previous Gyan FFmpeg binary is replaced by a controlled GPLv3-or-later build with
+all actual dependency source archives, build scripts, configuration, licenses and checksums.
+See [third-party notes](THIRD_PARTY_NOTICES.md) and [build instructions](docs/build/FFMPEG_WINDOWS.md).
 
 ## Build on Windows
 
@@ -87,7 +89,7 @@ npm run prepare:assets
 npm run tauri -- dev --target x86_64-pc-windows-msvc
 ```
 
-`prepare:assets` downloads pinned FFmpeg 7.1.1 Essentials to `src-tauri/binaries`
+`prepare:assets` downloads the hash-pinned self-built FFmpeg 7.1.1 to `src-tauri/binaries`
 using target-suffixed names, plus Noto Sans SC and licenses. End users do not set PATH.
 Do not substitute a different FFmpeg without checking filters, drivers and licenses.
 

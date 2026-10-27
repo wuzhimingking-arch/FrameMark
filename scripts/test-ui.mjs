@@ -33,7 +33,7 @@ try {
         if (cmd === "reorder_watermarks") { const sorted = args.ids.map(id => items.find(x => x.id === id)); items.splice(0, items.length, ...sorted); return; }
         if (cmd === "plugin:dialog|open") return "synthetic-demo.mp4";
         if (cmd === "inspect_video") return { path: "synthetic-demo.mp4", fileName: "demo.mp4", size: 1000000, duration: 5, width: 1920, height: 1080, fps: 30, fpsText: "30/1", videoCodec: "h264", audioCodec: "aac", hasAudio: true, rotation: 0, hdr: false, hdrDescription: "" };
-        if (cmd === "preview_watermarks") return Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=="), c => c.charCodeAt(0)).buffer;
+        if (cmd === "preview_watermarks") { const bytes = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=="), c => c.charCodeAt(0)); return args.next ? Array.from(bytes) : bytes.buffer; }
         if (cmd === "process_video") return { outputPath: "demo_marked.mp4", historyId: 1, watermarkCount: args.request.mode === "simultaneous" ? 6 : 2, eventCount: 2, seed: "DEMO", encoderLabel: "CPU" };
         if (cmd === "list_histories") return [];
         if (cmd.startsWith("plugin:event|")) return 0;
@@ -44,12 +44,14 @@ try {
   await page.goto("http://127.0.0.1:4174");
   await page.locator("#drop-zone").click();
   await page.locator("#rendered-preview:not([hidden])").waitFor();
+  await page.locator("#rendered-preview").evaluate(image => image.decode());
   assert.match(await page.locator("#config-summary").innerText(), /3 条水印.*2 次水印事件.*6 次绘制/);
   await page.locator("#watermark-mode").selectOption("sequential");
   assert.match(await page.locator("#config-summary").innerText(), /部分已选水印可能不会出现/);
   await page.locator("#next-preview").click();
   await page.waitForTimeout(250);
   assert.equal(await page.evaluate(() => window.qaCalls.filter(x => x.cmd === "preview_watermarks").at(-1).args.next), 1);
+  await page.locator("#rendered-preview").evaluate(image => image.decode());
   await page.locator('[data-move-selected="0"][data-step="1"]').click();
   assert.deepEqual(await page.evaluate(() => window.qaCalls.filter(x => x.cmd === "save_settings").at(-1).args.settings.selectedIds), [2, 1, 3]);
   await page.locator("[data-select-mark='1']").uncheck();

@@ -13,30 +13,28 @@ $assetTemp = Join-Path ([System.IO.Path]::GetTempPath()) 'framemark-release-asse
 $binaryDir = Join-Path $projectRoot 'src-tauri\binaries'
 $resourceDir = Join-Path $projectRoot 'src-tauri\resources'
 $target = 'x86_64-pc-windows-msvc'
-$ffmpegVersion = '7.1.1'
-$ffmpegUrl = "https://github.com/GyanD/codexffmpeg/releases/download/$ffmpegVersion/ffmpeg-$ffmpegVersion-essentials_build.zip"
-$expectedHashes = @{
-    ffmpeg = 'B90225987BDD042CCA09A1EFB5E34E9848F2D1DBF5FBCD388753A44145522997'
-    ffprobe = '05E8FA639450F8191635192871AE37A3EC3E4638FA12F3B7D49C6522BA16A8ED'
-}
+$manifestPath = Join-Path $projectRoot 'docs\compliance\ffmpeg-selfbuild\binaries.json'
+if (-not (Test-Path $manifestPath)) { throw '缺少自建 FFmpeg 发布清单，请先完成 scripts/build-ffmpeg.sh 及二进制审计' }
+$manifest = Get-Content -Raw -Encoding UTF8 $manifestPath | ConvertFrom-Json
+$expectedHashes = @{ ffmpeg = $manifest.ffmpeg; ffprobe = $manifest.ffprobe }
 
 New-Item -ItemType Directory -Force -Path $assetTemp, $binaryDir, $resourceDir | Out-Null
 
 $ffmpegTarget = Join-Path $binaryDir "ffmpeg-$target.exe"
 $ffprobeTarget = Join-Path $binaryDir "ffprobe-$target.exe"
-$ffmpegDir = Join-Path $assetTemp "ffmpeg-$ffmpegVersion"
+$ffmpegDir = Join-Path $assetTemp 'ffmpeg-selfbuild'
 $matchesPinned = (Test-Path $ffmpegTarget) -and (Test-Path $ffprobeTarget)
 if ($matchesPinned) {
     $matchesPinned = ((Get-Sha256 $ffmpegTarget) -eq $expectedHashes.ffmpeg) -and ((Get-Sha256 $ffprobeTarget) -eq $expectedHashes.ffprobe)
 }
 if (-not $matchesPinned) {
-    $ffmpegZip = Join-Path $assetTemp "ffmpeg-$ffmpegVersion-essentials_build.zip"
-    if (-not (Test-Path $ffmpegZip) -or (Get-Item $ffmpegZip).Length -lt 50MB) {
-        curl.exe -L --fail --retry 5 --retry-delay 3 -o $ffmpegZip $ffmpegUrl
-        if ($LASTEXITCODE) { throw 'FFmpeg 下载失败' }
-    }
-    if (-not (Test-Path $ffmpegDir)) {
-        Expand-Archive -LiteralPath $ffmpegZip -DestinationPath $ffmpegDir
+    if ($env:FRAMEMARK_FFMPEG_DIR) {
+        $ffmpegDir = $env:FRAMEMARK_FFMPEG_DIR
+    } else {
+        $ffmpegZip = Join-Path $assetTemp 'ffmpeg-selfbuild.zip'
+        curl.exe -L --fail --retry 5 -o $ffmpegZip $manifest.url
+        if ($LASTEXITCODE) { throw '自建 FFmpeg 下载失败' }
+        Expand-Archive -LiteralPath $ffmpegZip -DestinationPath $ffmpegDir -Force
     }
     foreach ($name in 'ffmpeg', 'ffprobe') {
         $source = Get-ChildItem -LiteralPath $ffmpegDir -Recurse -Filter "$name.exe" | Select-Object -First 1

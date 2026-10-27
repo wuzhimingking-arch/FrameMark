@@ -1,4 +1,21 @@
-# FrameMark 1.1.0 第三方分发审查
+# FrameMark 第三方分发记录
+
+## 1.1.1：替换旧二进制并自建
+
+2026-10-28 改用官方 FFmpeg 7.1.1 固定提交与全部已确认依赖源码交叉编译，显式 GPL/version3、静态链接、禁用自动发现与网络。精确输入见 `scripts/ffmpeg-sources.json`，真实构建脚本为 `scripts/build-ffmpeg.sh`。保留 x264 CPU、NVENC/QSV/AMF、内置 HEVC 解码、AAC、FreeType/HarfBuzz 文字渲染与 zlib/PNG。无源码补丁，不使用旧 Gyan 二进制或其未知依赖。
+
+新 ffmpeg SHA-256：`f3bc8375340268beb41f92d887175928dde5720e4cf4de43eaf4d46c73b200f0`。
+新 ffprobe SHA-256：`cd7ac5393a7323f1325323003d5f05b8a4acea74df6f3a2d39304f141e2c18a6`。
+
+完整对应源码包包含 8 份原始归档、全部构建脚本/配置/工具链版本、许可证、匹配二进制及 SHA256SUMS；完整解包后逐文件校验通过。
+源码包 `FrameMark-1.1.1-ffmpeg-corresponding-source.tar.gz`：273,510,184 字节，SHA-256 `11a1fd3519d2fa2ce3413f4611f817cbf5cdd6857843557cf43fc0932f6533a9`。
+计划随 [1.1.1 Release](https://github.com/wuzhimingking-arch/FrameMark/releases/tag/v1.1.1) 公开，不以该链接预先存在作为已发布证明；正式发布状态以 Release 和官网验收记录为准。
+
+新 sidecar 已在 Windows 通过 12 项原生 Rust 测试，包含 CPU/NVENC 双模式单帧、多水印、音频、VFR、旋转、取消与原片保护；额外中文路径 HEVC 输入转 H.264：480×270、48 帧、2.000000 秒。动态导入仅含 Windows 系统 DLL。QSV/AMF 已编译，当前没有对应硬件，不冒充真实设备编码验收。全部实际外部组件的许可与原始源码均保留；旧包中 x265、vid.stab、Rubber Band 等不再分发。字体 OFL 与应用依赖（含 MPL）继续保留原始声明和精确源码获取方式。
+
+这项替换解决了旧构建对应源码和构建材料无法对应的问题，不构成对所有司法辖区专利权或所有未来使用方式的法律保证。
+
+## 以下是 1.1.0 历史审查（仅适用于不再公开分发的旧安装包）
 
 审查日期：2026-10-28。资料修订：`1.1.0-compliance.1`。
 **结论：BLOCKED，尚不满足本项目公开安装包的放行条件。** 本文是技术证据和待办清单，不是法律意见。

@@ -7,14 +7,14 @@
 
 ## 当前版本
 
-- 1.1.0，Windows 10/11 x64；公开源码预发布。
+- 1.1.1，Windows 10/11 x64；采用完整对应源码可获取的自建 FFmpeg 发布。
 - macOS 保留架构兼容性，未构建和验证。
 - 自有源码、文档与品牌图标 MIT；第三方组件保留各自许可。
 
 ## 架构和规则
 
 - Tauri 2 + TypeScript/HTML/CSS + Rust；SQLite 位于应用数据目录。
-- 随包 FFmpeg/ffprobe 固定为 Gyan 7.1.1 Essentials，并校验二进制 SHA-256。
+- 随包 FFmpeg/ffprobe 为固定官方 7.1.1 源码及 8 项明确输入的自建 GPL-3.0-or-later 构建，版本/哈希见 `docs/compliance/ffmpeg-selfbuild/binaries.json`，构建脚本和全部对应源码随 Release 提供。旧 Gyan 安装包保留作历史比对，不公开补发。
 - 按真实帧 PTS 保留原区间选帧算法；末尾不完整区间也选一帧。
 - 算法 V2 先生成完整多水印计划，再执行 FFmpeg 流式合成；相同帧列表、配置、字体/工具版本和 Seed 可复现。
 - 每条文字通过实际 FFmpeg 光栅测量确定包含描边/背景余量的矩形。
