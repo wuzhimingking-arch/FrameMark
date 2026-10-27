@@ -5,6 +5,6 @@
   {"name":"freetype","version":"2.13.3","url":"https://codeload.github.com/freetype/freetype/tar.gz/refs/tags/VER-2-13-3","sha256":"bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103"},
   {"name":"harfbuzz","version":"10.0.1","url":"https://codeload.github.com/harfbuzz/harfbuzz/tar.gz/refs/tags/10.0.1","sha256":"e7358ea86fe10fb9261931af6f010d4358dac64f7074420ca9bc94aae2bdd542"},
   {"name":"nv-codec-headers","version":"12.2.72.0","url":"https://codeload.github.com/FFmpeg/nv-codec-headers/tar.gz/refs/tags/n12.2.72.0","sha256":"dbeaec433d93b850714760282f1d0992b1254fc3b5a6cb7d76fc1340a1e47563"},
-  {"name":"amf","version":"1.4.35","url":"https://codeload.github.com/GPUOpen-LibrariesAndSDKs/AMF/tar.gz/refs/tags/v1.4.35","sha256":"5d93101eae5895247bea58cff40bb84424158170ae7f931105666157cc187636"},
+  {"name":"amf","version":"1.4.35","url":"https://codeload.github.com/GPUOpen-LibrariesAndSDKs/AMF/tar.gz/refs/tags/v1.4.35","sha256":"5d93101eae5895247bea58cff40bb84424158170ae7f931105666157cc187636","headersArchive":"amf-headers.tar.gz","headersSha256":"99d37cfd3a3ab6e5d1e89cf6a84ece14e8124611860167e85fb4f4fd313b948b"},
   {"name":"libvpl","version":"2.14.0","url":"https://codeload.github.com/intel/libvpl/tar.gz/refs/tags/v2.14.0","sha256":"7c6bff1c1708d910032c2e6c44998ffff3f5fdbf06b00972bc48bf2dd9e5ac06"}
 ]

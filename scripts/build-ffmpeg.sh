@@ -8,6 +8,13 @@ mkdir -p sources
 python3 - "$script_dir/ffmpeg-sources.json" <<'PY'
 import hashlib, json, pathlib, subprocess, sys
 for entry in json.load(open(sys.argv[1])):
+    if entry.get('headersArchive') and pathlib.Path('sources', entry['headersArchive']).exists():
+        subset = pathlib.Path('sources', entry['headersArchive'])
+        if hashlib.sha256(subset.read_bytes()).hexdigest() != entry['headersSha256']:
+            raise SystemExit('AMF headers checksum mismatch')
+        pathlib.Path('amf').mkdir(exist_ok=True)
+        subprocess.run(['tar', '-xzf', str(subset), '-C', 'amf'], check=True)
+        continue
     path = pathlib.Path('sources') / (entry['name'] + '.tar.gz')
     if not path.exists():
         subprocess.run(['curl', '-fL', '--retry', '3', '-o', str(path), entry['url']], check=True)

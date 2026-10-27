@@ -9,6 +9,8 @@ bash scripts/build-ffmpeg.sh /opt/framemark-ffmpeg
 
 `scripts/ffmpeg-sources.json` 固定每个原始归档的版本、下载地址和 SHA-256；脚本下载缺失输入并拒绝哈希不一致的输入。目录不可包含其他版本的已解压源码或编译缓存。首次构建请使用空目录；重复构建仅用于相同输入。源码无补丁，编译选项全部在脚本内。
 
+AMF 在本构建中仅使用头文件。对应源码包保留原样的完整 `amf/public/include` 和原始 LICENSE，不包含 SDK 示例视频；清单同时记录完整上游归档哈希和精简头文件归档哈希。构建脚本优先验证并使用随包头文件，无需下载被省略的示例视频。源码包不重复包含可执行文件，实际二进制指纹见 `logs/BINARY_SHA256SUMS`。
+
 保留 CPU libx264、内置 HEVC 解码、AAC、drawtext、FreeType、HarfBuzz、zlib/PNG、NVENC、QSV/libvpl 和 AMF。禁用第三方自动发现和网络；不链接旧 Gyan 包的 x265、vid.stab、Rubber Band、TLS、OpenJPEG 等外部库。硬件驱动仍由操作系统提供，不随包分发；可用性以真实编码探测为准。
 
 本构建显式启用 GPL 与 version3，FFmpeg 可执行程序按 GPL-3.0-or-later 分发。FrameMark 仍通过独立子进程调用，不与 libav 链接。保留各依赖的原始许可证、版权说明以及完整源码。FreeType 采用其 FTL 许可；HarfBuzz 为 MIT 风格许可，oneVPL 与 AMF 为 MIT，NVIDIA 编码头文件保留其 MIT 许可，x264 为 GPL-2.0-or-later。编译器运行库保留 GCC Runtime Library Exception 等适用声明。
