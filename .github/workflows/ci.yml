@@ -24,4 +24,13 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib
       - run: npm run tauri -- build --target x86_64-pc-windows-msvc
-      # Install/run checks require an interactive Windows session and run locally.
+      - name: Verify packaged installer on isolated Windows runner
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          New-Item -ItemType Directory -Force artifacts/windows | Out-Null
+          Copy-Item "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/帧印_${version}_x64-setup.exe" artifacts/windows/
+          if (-not (Get-Command llvm-readobj.exe -ErrorAction SilentlyContinue)) {
+            $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
+          }
+          npm run verify:windows

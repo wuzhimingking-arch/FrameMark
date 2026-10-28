@@ -293,6 +293,13 @@ function showComplete(result: ProcessResult) {
   dialog.innerHTML = `<div class="modal-body complete"><div class="success">✓</div><h2>处理完成</h2><p>${html(result.outputPath.split(/[\\/]/).pop())}</p><div class="result-grid"><div><span>水印事件 / 绘制</span><strong>${result.eventCount} 次 / ${result.watermarkCount} 次</strong></div><div><span>视频编码</span><strong>${html(result.encoderLabel)}</strong></div><div><span>出现方式</span><strong>${mode==="simultaneous"?"同时出现":"依次闪现"}</strong></div><div><span>随机 Seed</span><strong>${result.seed}</strong></div></div><div class="modal-actions"><button id="play-output" class="primary">播放视频</button><button id="reveal-output" class="secondary">打开文件位置</button></div><button id="close-complete" class="text-button">再次处理</button></div>`;
   dialog.showModal();
   document.querySelector("#play-output")?.addEventListener("click", () => openPath(result.outputPath));
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "complete-close";
+  closeButton.setAttribute("aria-label", "关闭处理完成弹窗");
+  closeButton.textContent = "×";
+  closeButton.addEventListener("click", () => dialog.close());
+  dialog.querySelector(".modal-body")!.prepend(closeButton);
   document.querySelector("#reveal-output")?.addEventListener("click", () => revealItemInDir(result.outputPath));
   document.querySelector("#close-complete")?.addEventListener("click", () => dialog.close());
 }

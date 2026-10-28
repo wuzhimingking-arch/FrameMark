@@ -36,6 +36,7 @@ try {
         if (cmd === "preview_watermarks") { const bytes = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=="), c => c.charCodeAt(0)); return args.next ? Array.from(bytes) : bytes.buffer; }
         if (cmd === "process_video") return { outputPath: "demo_marked.mp4", historyId: 1, watermarkCount: args.request.mode === "simultaneous" ? 6 : 2, eventCount: 2, seed: "DEMO", encoderLabel: "CPU" };
         if (cmd === "list_histories") return [];
+        if (cmd === "plugin:opener|open_path" || cmd === "plugin:opener|reveal_item_in_dir") return;
         if (cmd.startsWith("plugin:event|")) return 0;
         throw new Error("Unhandled IPC fixture: " + cmd);
       },
@@ -62,6 +63,20 @@ try {
   await page.locator("#start-process").click();
   await page.locator("#complete-dialog[open]").waitFor();
   assert.match(await page.locator("#complete-dialog").innerText(), /2 次 \/ 2 次/);
+  await page.locator("#play-output").click();
+  await page.locator("#reveal-output").click();
+  assert.equal(await page.evaluate(() => window.qaCalls.some(x => x.cmd === "plugin:opener|open_path" && x.args.path === "demo_marked.mp4")), true);
+  assert.equal(await page.evaluate(() => window.qaCalls.some(x => x.cmd === "plugin:opener|reveal_item_in_dir" && x.args.paths[0] === "demo_marked.mp4")), true);
+  const callsBeforeClose = await page.evaluate(() => window.qaCalls.filter(x => /process_video|delete/.test(x.cmd)).length);
+  await page.getByRole("button", { name: "关闭处理完成弹窗" }).click();
+  assert.equal(await page.locator("#complete-dialog").evaluate(dialog => dialog.open), false);
+  assert.equal(await page.evaluate(() => window.qaCalls.filter(x => /process_video|delete/.test(x.cmd)).length), callsBeforeClose);
+  await page.locator("#start-process").click();
+  await page.locator("#complete-dialog[open]").waitFor();
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#complete-dialog").evaluate(dialog => dialog.open), false);
+  await page.locator("#start-process").click();
+  await page.locator("#complete-dialog[open]").waitFor();
   await page.locator("#close-complete").click();
   await page.locator("#manage-watermarks").click();
   assert.equal(await page.getByText("水印信息管理", { exact: true }).count(), 1);

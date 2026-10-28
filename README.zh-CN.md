@@ -1,12 +1,12 @@
 # 帧印 FrameMark — 随机单帧视频版权水印工具
 
-[English](README.md) · [参与贡献](CONTRIBUTING.md) · [MIT 许可证](LICENSE)
+[English](README.en.md) · [参与贡献](CONTRIBUTING.md) · [MIT 许可证](LICENSE)
 
 帧印是一款开源、本地运行的桌面视频水印工具。创作者可以保存用户名、频道、
 品牌、版权声明、网站地址等自由文字，在每个时间区间内随机选择一个真实视频帧，
 把水印写入安全区域中的随机位置，增加批量寻找和清除版权标记的工作量。
 
-当前版本 **1.1.1**，发行目标是 Windows 10/11 x64。macOS 尚未构建验证，属于后续计划。
+当前版本 **1.1.2**，发行目标是 Windows 10/11 x64。macOS 尚未构建验证，属于后续计划。
 
 ## 功能
 
@@ -61,6 +61,10 @@
 
 ## 下载与发布状态
 
+1.1.2 为源码预发布；中文机器级安装默认系统 64 位 `Program Files\framemark`，需要管理员授权。
+旧版当前用户安装需先卸载程序且不要删除用户数据；不自动跨权限迁移。
+本轮尚未完成管理员安装/升级/卸载验收，官网稳定下载仍为 1.1.1。
+
 Windows 安装包与完整对应第三方源码见 [1.1.1 Release](https://github.com/wuzhimingking-arch/FrameMark/releases/tag/v1.1.1)。安装包未进行数字签名，Windows/SmartScreen 可能提示未知发布者。
 
 本版本用可控自建 GPLv3-or-later FFmpeg 替换旧 Gyan 二进制，公开全部实际依赖源码、构建脚本、配置、许可证和 SHA-256；旧 1.1.0 安装包不补发。详细说明见 [第三方组件说明](THIRD_PARTY_NOTICES.md) 与 [自建步骤](docs/build/FFMPEG_WINDOWS.md)。
@@ -102,7 +106,8 @@ npm run verify:windows
 
 该脚本把安装包复制到 `artifacts/windows/`。验证会检查 GUI 子系统、动态依赖、
 图标、安装根目录快捷方式、开始菜单、内置资源、干净 PATH 启动及卸载。
-它会实际安装和卸载临时的当前用户版本，并可能更新软件快捷方式，建议在测试用户中运行。
+它会实际执行机器级安装和卸载，并可能更新快捷方式，必须在管理员测试环境运行。
+只读检查可用 `powershell -File scripts/verify-windows-release.ps1 -AuditOnly`，不代表安装验收。
 
 自动测试只使用合成数据，涵盖迁移、1000 个事件的确定性/边界/碰撞、双模式 CPU/GPU、
 真实解码帧、音频、VFR、旋转、中文路径和取消。GitHub CI 执行 Windows 格式、测试、

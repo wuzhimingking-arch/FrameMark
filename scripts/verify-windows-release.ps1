@@ -1,4 +1,5 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿param([switch]$AuditOnly)
+$ErrorActionPreference = 'Stop'
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $skipLaunch = $env:FRAMEMARK_VERIFY_NO_GUI -eq '1'
 
@@ -32,6 +33,14 @@ $nsisScript = Join-Path $releaseDir 'nsis\x64\installer.nsi'
 $nsisText = Get-Content -LiteralPath $nsisScript -Encoding UTF8 -Raw
 $mode = $tauriConfig.bundle.windows.webviewInstallMode.type
 if ($mode -ne 'embedBootstrapper' -or $nsisText -notmatch 'WEBVIEW2BOOTSTRAPPERPATH') { throw 'NSIS 未配置内嵌 WebView2 Bootstrapper' }
+if ($nsisText -notmatch 'MUI_LANGUAGE "SimpChinese"' -or $nsisText -match 'MUI_LANGUAGE "English"') { throw '安装器必须仅包含简体中文语言' }
+if ($tauriConfig.bundle.windows.nsis.installMode -ne 'perMachine' -or $nsisText -notmatch 'RequestExecutionLevel admin') { throw '安装器必须使用机器级安装并申请管理员权限' }
+if ($AuditOnly) {
+    Write-Host '只读发行审计通过：GUI 子系统、系统 DLL、简体中文、机器级权限和 WebView2。未执行安装或 GUI 验收。'
+    return
+}
+$administrator = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $administrator) { throw '机器级安装验收需要管理员测试会话；本脚本不会自行弹出 UAC 或绕过权限。可使用 -AuditOnly 进行只读审计。' }
 
 $verificationRoot = Join-Path ([System.IO.Path]::GetTempPath()) "framemark-clean-$([guid]::NewGuid().ToString('N'))"
 $installDir = Join-Path $verificationRoot 'installed'
@@ -52,7 +61,7 @@ try {
     $resources = @(& $readobj.Source --coff-resources (Join-Path $installDir 'frame-mark.exe'))
     if (-not ($resources -match 'ICON')) { throw '主程序缺少内嵌图标资源' }
 
-    $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+    $startMenu = [Environment]::GetFolderPath('CommonPrograms')
     if (-not (Get-ChildItem -LiteralPath $startMenu -Recurse -Filter '帧印.lnk' -ErrorAction SilentlyContinue)) { throw '开始菜单缺少帧印快捷方式' }
 
     if (-not $skipLaunch) {

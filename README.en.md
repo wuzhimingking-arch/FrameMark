@@ -1,0 +1,171 @@
+# FrameMark — Random Single-Frame Video Watermarking
+
+[简体中文](README.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE)
+
+FrameMark is an open-source, local desktop application for creators. Save custom
+copyright text, select several watermarks, and place them on a random real frame
+inside each time interval, at independent random coordinates inside safe margins.
+It aims to increase the effort of finding and removing every identity mark while
+keeping interruption during ordinary playback brief.
+
+Current version: **1.1.2**. Windows 10/11 x64 is the release target.
+macOS is planned and has not been built or validated.
+
+## Features
+
+- Free text: names, channels, URLs, @handles, © notices and multiline text
+  (up to 240 characters / 8 lines per saved watermark).
+- Add, edit, duplicate, delete and reorder saved watermarks.
+- Multi-select with independent ordering for a video.
+- **Simultaneous**: all selected texts appear on the same one-frame event.
+- **Sequential**: one text per event, cycling in selected order.
+- Measured text dimensions, wrapping, bounded font reduction and collision rejection.
+  An unfit combination stops before encoding; no watermark is silently omitted.
+- Actual FFmpeg previews share the output layout and drawing code.
+- H.264 encoding: NVENC → Intel QSV → AMD AMF → libx264 CPU in automatic mode.
+  Availability requires a successful encode, not just an encoder listing.
+  NVIDIA is locally tested; Intel/AMD require validation on corresponding hardware.
+  Hardware failure retries with CPU. Apple VideoToolbox is reserved for future macOS work.
+- Local SQLite history stores text snapshots, event/drawing counts, order, mode,
+  seed, algorithm version, timestamps, frame indexes, coordinates and styling.
+- Source video is never edited; compatible audio is copied, VFR timestamps are
+  retained, cancellation removes incomplete output, and HDR is warned about.
+- GUI-only Windows release, bundled FFmpeg/ffprobe and WebView2 installation support.
+
+## How it works
+
+A 60-second video at a 3-second interval has 20 events. Each interval contributes
+one random decoded frame; a final partial interval contributes one too.
+Three selected texts in simultaneous mode produce **20 events / 60 drawings**.
+Sequential mode produces **20 events / 20 drawings**, rotating A → B → C → A.
+If there are fewer events than selected texts, later sequential texts may not appear.
+
+Only target frames are changed. Video is re-encoded to H.264, so unmarked frames
+also undergo normal compression. This is not an invisible or indestructible mark:
+re-encoding, frame-rate conversion, cropping, frame dropping or AI repair can remove it.
+It does not guarantee prevention of reposting or legal proof of ownership.
+
+## Screenshots
+
+Real Windows 1.1.1 screenshots (HEVC sample, native FFmpeg preview and NVIDIA export):
+
+![Native preview](docs/screenshots/framemark-1.1.1-preview.png)
+![Completed export](docs/screenshots/framemark-1.1.1-complete.png)
+
+## Use
+
+1. Open Settings and add your watermark text.
+2. Import or drag in a finished video.
+3. Check one or more watermarks; adjust their order and select an appearance mode.
+4. Set interval, style and margins. Re-randomize the preview or inspect the next text.
+5. Start processing. Progress and completion show the actual encoder.
+6. Open the new video and retain its history for later frame-by-frame inspection.
+
+Windows installs contain `frame-mark.exe` and a friendly `帧印.lnk` in the installation
+root, plus a Start Menu entry. Removing a desktop shortcut does not remove these.
+The application and installer share the included project icon.
+
+## Download and distribution status
+
+1.1.2 is a source pre-release. The installer now uses Simplified Chinese and
+machine-wide installation, defaulting to the system's 64-bit `Program Files\framemark`.
+Administrator approval is required. A detected old per-user installation must be
+uninstalled without deleting user data first; automatic cross-scope migration is not implemented.
+Administrator install/upgrade/uninstall acceptance remains pending. The website's stable download stays at 1.1.1.
+
+Download the Windows installer and complete corresponding third-party source from
+[the 1.1.1 release](https://github.com/wuzhimingking-arch/FrameMark/releases/tag/v1.1.1).
+The installer is unsigned; Windows may show an unknown-publisher or SmartScreen warning.
+The previous Gyan FFmpeg binary is replaced by a controlled GPLv3-or-later build with
+all actual dependency source archives, build scripts, configuration, licenses and checksums.
+See [third-party notes](THIRD_PARTY_NOTICES.md) and [build instructions](docs/build/FFMPEG_WINDOWS.md).
+
+## Build on Windows
+
+Use Node.js **22.12+** (Node 24 recommended), npm, and current stable Rust with
+the `x86_64-pc-windows-msvc` target. The tested toolchain was Node 24 / Rust 1.97.
+Install the [Tauri Windows prerequisites](https://v2.tauri.app/start/prerequisites/)
+(Visual Studio C++ build tools, Windows SDK and WebView2 Runtime).
+Internet access is needed for developer dependencies/assets and Runtime bootstrap
+installation. Application video processing stays local.
+
+```powershell
+npm ci
+npm run prepare:assets
+npm run tauri -- dev --target x86_64-pc-windows-msvc
+```
+
+`prepare:assets` downloads the hash-pinned self-built FFmpeg 7.1.1 to `src-tauri/binaries`
+using target-suffixed names, plus Noto Sans SC and licenses. End users do not set PATH.
+Do not substitute a different FFmpeg without checking filters, drivers and licenses.
+
+```powershell
+npm run build
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo test --manifest-path src-tauri/Cargo.toml --lib
+npm run tauri -- build --target x86_64-pc-windows-msvc
+```
+
+The normal Tauri build creates the NSIS installer under
+`src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`.
+
+For the project's alternative LLVM/cargo-xwin build environment, install
+`cargo-xwin` (`cargo install --locked cargo-xwin`) and LLVM tools
+(`clang.exe`, `ld.lld.exe`, `llvm-rc.exe`, `llvm-readobj.exe`) on PATH, then run:
+
+```powershell
+npm run tauri:build
+npm run verify:windows
+```
+
+That build copies the installer to `artifacts/windows/`. Verification audits the GUI
+subsystem, dynamic imports, embedded icon, root shortcut, FFmpeg resources,
+Start Menu entry, isolated clean-PATH launch and uninstall.
+It installs/uninstalls a temporary current-user copy and can update app shortcuts.
+Run it on a Windows test account rather than during normal use.
+
+Tests use synthetic content and cover migration, deterministic multi-layout,
+1000 events, bounds/collisions, both modes on CPU and available GPU, decoded frames,
+audio, VFR, rotation, Chinese/space paths and cancellation. CI performs Windows
+format/test/frontend/installer builds; interactive install checks run locally.
+
+## Architecture and limits
+
+Tauri 2 + TypeScript/HTML/CSS; Rust coordinates FFmpeg/ffprobe and SQLite.
+There is no server, login or video upload. Settings/history/logs live in normal
+application data directories. Legacy identity rows and single-watermark histories
+are migrated in place; historical text remains even after deleting a saved item.
+
+MP4 H.264/H.265 inputs are the primary path. MOV/MKV/WebM containers are accepted
+only when their video codec is supported. Output is H.264 MP4. Compatible audio
+is copied; other audio is encoded to AAC. Text subtitle streams are converted to
+MP4 text; unsupported subtitle codecs can fail explicitly. Data/attachment streams
+are not copied. HDR/Dolby Vision color preservation is not guaranteed.
+No face/subtitle avoidance, editing, logo watermarks or piracy scanning is included.
+
+See [project context](docs/PROJECT_CONTEXT.md) and [validation evidence](docs/VALIDATION.md).
+
+## Third-party components and source access
+
+- The bundled Gyan FFmpeg/ffprobe 7.1.1 Essentials binaries are **GPL-3.0-or-later**,
+  invoked as independent processes, not linked into FrameMark. Their FFmpeg core
+  source is [commit db69d06](https://github.com/FFmpeg/FFmpeg/tree/db69d06eeeab4f46da15030a80d539efb4503ca8).
+- [The compliance manifest](docs/compliance/ffmpeg-7.1.1/manifest.json) lists exact
+  source archive URLs and SHA-256 values for FFmpeg and four identified libraries.
+  These upstream snapshots are **not yet a complete corresponding-source bundle**;
+  remaining dependencies, patches and necessary build scripts are unresolved.
+- Noto Sans CJK SC uses **SIL OFL 1.1**; Tauri and application dependencies retain
+  their own licenses. See [third-party notices](THIRD_PARTY_NOTICES.md).
+
+The [1.1.0 compliance review](docs/FFMPEG_COMPLIANCE.md) records the unchanged
+installer fingerprint, source/build linkage, collected materials, verification and
+remaining blockers. `npm run audit:ffmpeg` checks the retained local artifacts;
+exit code 2 means integrity checks passed but public binary distribution is blocked.
+An independent-process integration does not waive FFmpeg redistribution obligations.
+
+## License
+
+FrameMark's original source, documentation and project icon are under the
+[MIT License](LICENSE). Third-party components keep their own licenses:
+the pinned FFmpeg sidecar is GPL-3.0-or-later and the Noto font is SIL OFL 1.1.
+They are not relicensed as MIT. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
