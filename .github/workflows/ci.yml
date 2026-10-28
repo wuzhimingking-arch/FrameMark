@@ -33,7 +33,7 @@ jobs:
           if (-not (Get-Command llvm-readobj.exe -ErrorAction SilentlyContinue)) {
             $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
           }
-          npm run verify:windows
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-windows-release.ps1 -DefaultInstallDirectory
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer

@@ -1,4 +1,4 @@
-﻿param([switch]$AuditOnly)
+﻿param([switch]$AuditOnly, [switch]$DefaultInstallDirectory)
 $ErrorActionPreference = 'Stop'
 $OutputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $skipLaunch = $env:FRAMEMARK_VERIFY_NO_GUI -eq '1'
@@ -44,12 +44,18 @@ if (-not $administrator) { throw '机器级安装验收需要管理员测试会�
 
 $verificationRoot = Join-Path ([System.IO.Path]::GetTempPath()) "framemark-clean-$([guid]::NewGuid().ToString('N'))"
 $installDir = Join-Path $verificationRoot 'installed'
+if ($DefaultInstallDirectory) {
+    if (-not $env:ProgramW6432) { throw '无法读取系统 64 位 Program Files 目录' }
+    $installDir = Join-Path $env:ProgramW6432 'framemark'
+    if (Test-Path -LiteralPath $installDir) { throw '默认安装目录已存在，拒绝覆盖或卸载现有安装。请使用隔离测试机器。' }
+}
 $process = $null
 New-Item -ItemType Directory -Force -Path $verificationRoot | Out-Null
 try {
     $isolatedInstaller = Join-Path $verificationRoot (Split-Path -Leaf $installer)
     Copy-Item -LiteralPath $installer -Destination $isolatedInstaller
-    $install = Start-Process -FilePath $isolatedInstaller -ArgumentList @('/S', "/D=$installDir") -PassThru -Wait -WindowStyle Hidden
+    $installerArguments = if ($DefaultInstallDirectory) { @('/S') } else { @('/S', "/D=$installDir") }
+    $install = Start-Process -FilePath $isolatedInstaller -ArgumentList $installerArguments -PassThru -Wait -WindowStyle Hidden
     if ($install.ExitCode) { throw "安装程序退出码：$($install.ExitCode)" }
 
     foreach ($relative in 'frame-mark.exe', '帧印.lnk', 'ffmpeg.exe', 'ffprobe.exe', 'resources\NotoSansSC-Regular.ttf', 'resources\licenses\FFmpeg-GPLv3.txt', 'resources\licenses\Noto-OFL.txt', 'uninstall.exe') {
