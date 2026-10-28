@@ -26,6 +26,10 @@ jobs:
           if ($installers.Count -ne 1) { throw 'Expected exactly one installer' }
           $installer = $installers[0]
           if ((Get-FileHash $installer.FullName -Algorithm SHA256).Hash -ne $env:EXPECTED_SHA256) { throw 'Installer hash mismatch' }
+          gh release download v1.1.1 --repo '${{ github.repository }}' --pattern 'FrameMark_1.1.1_x64-setup.exe' --dir legacy
+          if ($LASTEXITCODE) { throw 'Legacy installer unavailable' }
+          $legacy = Get-ChildItem legacy -Filter '*setup.exe' | Select-Object -First 1
+          if ((Get-FileHash $legacy.FullName -Algorithm SHA256).Hash -ne '344a499d888ec02ae4868a679003d7999bec32df95c657ab98b3e38b0390a144') { throw 'Legacy installer hash mismatch' }
       - name: Inspect real installation and shortcuts
         shell: pwsh
         run: |
@@ -33,30 +37,66 @@ jobs:
           $directory = Join-Path $env:ProgramW6432 'framemark'
           if (Test-Path -LiteralPath $directory) { throw 'Refusing to overwrite an existing installation' }
           $installer = Get-ChildItem candidate -Filter '*setup.exe' | Select-Object -First 1
+          $legacyDirectory = Join-Path $env:RUNNER_TEMP 'framemark-legacy-test'
+          if (Test-Path -LiteralPath $legacyDirectory) { throw 'Legacy test directory already exists' }
+          $legacy = Get-ChildItem legacy -Filter '*setup.exe' | Select-Object -First 1
+          $oldSetup = Start-Process $legacy.FullName -ArgumentList @('/S', "/D=$legacyDirectory") -Wait -PassThru -WindowStyle Hidden
+          if ($oldSetup.ExitCode) { throw 'Legacy installation failed' }
+          $data = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'com.peakedge.framemark'
+          New-Item -ItemType Directory -Force $data | Out-Null
+          $marker = Join-Path $data 'candidate-data-retention-test.txt'
+          Set-Content -LiteralPath $marker -Encoding UTF8 -Value 'preserve-user-data'
+          try {
+            $blocked = Start-Process $installer.FullName -ArgumentList '/S' -Wait -PassThru -WindowStyle Hidden
+            if ($blocked.ExitCode -ne 3) { throw 'Per-user migration must stop explicitly with exit code 3' }
+            if (Test-Path -LiteralPath (Join-Path $directory 'frame-mark.exe')) { throw 'A second application was installed' }
+          } finally {
+            Start-Process (Join-Path $legacyDirectory 'uninstall.exe') -ArgumentList '/S' -Wait -WindowStyle Hidden
+            Start-Sleep -Seconds 2
+          }
+          if (-not (Test-Path -LiteralPath $marker)) { throw 'Legacy uninstall removed user data' }
+          Write-Host 'Legacy installation detected; duplicate blocked; uninstall retained user data.'
           $app = $null
           try {
             $setup = Start-Process $installer.FullName -ArgumentList '/S' -Wait -PassThru -WindowStyle Hidden
             if ($setup.ExitCode) { throw "Installer exit: $($setup.ExitCode)" }
             Get-ChildItem -LiteralPath $directory | Select-Object Name,Length | Format-Table
             $linkPath = Join-Path $directory '帧印.lnk'
-            $link = (New-Object -ComObject WScript.Shell).CreateShortcut($linkPath)
-            Write-Host "WSH target: $($link.TargetPath)"
-            Write-Host "Link bytes: $([Convert]::ToBase64String([IO.File]::ReadAllBytes($linkPath)))"
             $shell = New-Object -ComObject Shell.Application
-            Write-Host "Shell target: $($shell.NameSpace($directory).ParseName('帧印.lnk').GetLink.Path)"
-            $app = Start-Process (Join-Path $directory 'frame-mark.exe') -PassThru
-            $ready = $false
-            for ($i=0; $i -lt 120; $i++) {
-              Start-Sleep -Milliseconds 250
-              $app.Refresh()
-              if ($app.HasExited) { throw "Application exit: $($app.ExitCode)" }
-              if ($app.MainWindowTitle -like '帧印*') { $ready = $true; break }
+            $rootLink = $shell.NameSpace($directory).ParseName('帧印.lnk').GetLink
+            if ($rootLink.Path -ne (Join-Path $directory 'frame-mark.exe')) { throw 'Root shortcut target mismatch' }
+            $icon = ''
+            $rootLink.GetIconLocation([ref]$icon) | Out-Null
+            if ($icon -notlike '*frame-mark.exe*') { throw 'Root shortcut icon mismatch' }
+            $repair = Start-Process $installer.FullName -ArgumentList '/S' -Wait -PassThru -WindowStyle Hidden
+            if ($repair.ExitCode) { throw 'Machine-level reinstall failed' }
+            $desktop = Join-Path ([Environment]::GetFolderPath('CommonDesktopDirectory')) '帧印.lnk'
+            $menu = @(Get-ChildItem ([Environment]::GetFolderPath('CommonPrograms')) -Filter '帧印.lnk' -Recurse)
+            if ($menu.Count -ne 1) { throw 'Expected a single Start Menu shortcut' }
+            $entries = @((Join-Path $directory 'frame-mark.exe'), $linkPath, $menu[0].FullName, $desktop)
+            $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+            foreach ($entry in $entries) {
+              $app = Start-Process $entry -PassThru
+              $ready = $false
+              for ($i=0; $i -lt 120; $i++) {
+                Start-Sleep -Milliseconds 250
+                $app.Refresh()
+                if ($app.HasExited) { throw "Application exit: $($app.ExitCode)" }
+                if ($app.MainWindowTitle -like '帧印*') { $ready = $true; break }
+              }
+              if (-not $ready) { throw "Native window did not open: $entry" }
+              Write-Host "Clean-PATH native launch passed: $entry"
+              Stop-Process -Id $app.Id -Force
+              $app.WaitForExit()
             }
-            if (-not $ready) { throw 'Native window did not open' }
-            Write-Host "Native window opened: $($app.MainWindowTitle)"
-            if ($link.TargetPath -ne (Join-Path $directory 'frame-mark.exe')) { throw 'Root shortcut target mismatch' }
+            Remove-Item -LiteralPath $desktop
+            if (-not (Test-Path -LiteralPath (Join-Path $directory 'frame-mark.exe'))) { throw 'Deleting a shortcut removed the application' }
           } finally {
             if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id -Force; $app.WaitForExit() }
             $uninstaller = Join-Path $directory 'uninstall.exe'
             if (Test-Path -LiteralPath $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait -WindowStyle Hidden }
           }
+          Start-Sleep -Seconds 2
+          if (Test-Path -LiteralPath $directory) { throw 'Uninstall left installation files' }
+          if (-not (Test-Path -LiteralPath $marker)) { throw 'Machine uninstall removed user data' }
+          Write-Host 'Default Program Files directory, reinstall, shortcuts, launch, uninstall and user-data retention passed.'

@@ -62,12 +62,14 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $installDir $relative))) { throw "安装目录缺少：$relative" }
     }
     $shortcutShell = New-Object -ComObject WScript.Shell
-    $rootShortcut = $shortcutShell.CreateShortcut((Join-Path $installDir '帧印.lnk'))
+    $rootShortcut = (New-Object -ComObject Shell.Application).NameSpace($installDir).ParseName('帧印.lnk').GetLink
     # WScript expands 8.3 paths (for example RUNNER~1); normalize both sides without saving a file.
     $expectedShortcut = $shortcutShell.CreateShortcut((Join-Path $verificationRoot 'expected-not-saved.lnk'))
     $expectedShortcut.TargetPath = Join-Path $installDir 'frame-mark.exe'
-    if ($rootShortcut.TargetPath -ne $expectedShortcut.TargetPath) { throw "安装根目录快捷方式目标错误：实际 $($rootShortcut.TargetPath)，预期 $($expectedShortcut.TargetPath)" }
-    if ($rootShortcut.IconLocation -notlike "*frame-mark.exe*") { throw '安装根目录快捷方式没有使用主程序图标' }
+    if ($rootShortcut.Path -ne $expectedShortcut.TargetPath) { throw "安装根目录快捷方式目标错误：实际 $($rootShortcut.Path)，预期 $($expectedShortcut.TargetPath)" }
+    $shortcutIcon = ''
+    $rootShortcut.GetIconLocation([ref]$shortcutIcon) | Out-Null
+    if ($shortcutIcon -notlike "*frame-mark.exe*") { throw '安装根目录快捷方式没有使用主程序图标' }
     $resources = @(& $readobj.Source --coff-resources (Join-Path $installDir 'frame-mark.exe'))
     if (-not ($resources -match 'ICON')) { throw '主程序缺少内嵌图标资源' }
 
