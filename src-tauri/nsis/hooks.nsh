@@ -27,5 +27,15 @@ FunctionEnd
 !define MUI_CUSTOMFUNCTION_GUIINIT FrameMarkInstallDirectory
 
 !macro NSIS_HOOK_PREINSTALL
-  Call FrameMarkInstallDirectory
+  ${If} ${Silent}
+    Call FrameMarkInstallDirectory
+  ${EndIf}
+  ; Tauri selects OUTDIR before this hook; changing INSTDIR alone splits the installation.
+  ${If} $OUTDIR != $INSTDIR
+    Push $0
+    StrCpy $0 $OUTDIR
+    SetOutPath $INSTDIR
+    RMDir $0 ; Only removes the obsolete empty directory; never removes user files.
+    Pop $0
+  ${EndIf}
 !macroend
