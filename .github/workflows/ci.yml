@@ -34,3 +34,8 @@ jobs:
             $env:PATH = "C:\Program Files\LLVM\bin;$env:PATH"
           }
           npm run verify:windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: artifacts/windows/*setup.exe
+          if-no-files-found: error
