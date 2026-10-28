@@ -6,7 +6,8 @@ on:
         description: Expected SHA-256 of the private v1.1.2 installer
         required: true
 permissions:
-  contents: read
+  # GitHub requires writer access to read draft releases; this manual-only job never publishes.
+  contents: write
 jobs:
   install:
     runs-on: windows-latest
