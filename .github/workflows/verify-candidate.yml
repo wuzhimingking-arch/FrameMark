@@ -1,0 +1,61 @@
+name: Verify private installer candidate
+on:
+  workflow_dispatch:
+    inputs:
+      sha256:
+        description: Expected SHA-256 of the private v1.1.2 installer
+        required: true
+permissions:
+  contents: read
+jobs:
+  install:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download and verify private candidate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA256: ${{ inputs.sha256 }}
+        run: |
+          if ($env:EXPECTED_SHA256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid expected hash' }
+          gh release download v1.1.2 --repo '${{ github.repository }}' --pattern '*setup.exe' --dir candidate
+          if ($LASTEXITCODE) { throw 'Private candidate access failed' }
+          $installers = @(Get-ChildItem candidate -Filter '*setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one installer' }
+          $installer = $installers[0]
+          if ((Get-FileHash $installer.FullName -Algorithm SHA256).Hash -ne $env:EXPECTED_SHA256) { throw 'Installer hash mismatch' }
+      - name: Inspect real installation and shortcuts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $directory = Join-Path $env:ProgramW6432 'framemark'
+          if (Test-Path -LiteralPath $directory) { throw 'Refusing to overwrite an existing installation' }
+          $installer = Get-ChildItem candidate -Filter '*setup.exe' | Select-Object -First 1
+          $app = $null
+          try {
+            $setup = Start-Process $installer.FullName -ArgumentList '/S' -Wait -PassThru -WindowStyle Hidden
+            if ($setup.ExitCode) { throw "Installer exit: $($setup.ExitCode)" }
+            Get-ChildItem -LiteralPath $directory | Select-Object Name,Length | Format-Table
+            $linkPath = Join-Path $directory '帧印.lnk'
+            $link = (New-Object -ComObject WScript.Shell).CreateShortcut($linkPath)
+            Write-Host "WSH target: $($link.TargetPath)"
+            Write-Host "Link bytes: $([Convert]::ToBase64String([IO.File]::ReadAllBytes($linkPath)))"
+            $shell = New-Object -ComObject Shell.Application
+            Write-Host "Shell target: $($shell.NameSpace($directory).ParseName('帧印.lnk').GetLink.Path)"
+            $app = Start-Process (Join-Path $directory 'frame-mark.exe') -PassThru
+            $ready = $false
+            for ($i=0; $i -lt 120; $i++) {
+              Start-Sleep -Milliseconds 250
+              $app.Refresh()
+              if ($app.HasExited) { throw "Application exit: $($app.ExitCode)" }
+              if ($app.MainWindowTitle -like '帧印*') { $ready = $true; break }
+            }
+            if (-not $ready) { throw 'Native window did not open' }
+            Write-Host "Native window opened: $($app.MainWindowTitle)"
+            if ($link.TargetPath -ne (Join-Path $directory 'frame-mark.exe')) { throw 'Root shortcut target mismatch' }
+          } finally {
+            if ($app -and -not $app.HasExited) { Stop-Process -Id $app.Id -Force; $app.WaitForExit() }
+            $uninstaller = Join-Path $directory 'uninstall.exe'
+            if (Test-Path -LiteralPath $uninstaller) { Start-Process $uninstaller -ArgumentList '/S' -Wait -WindowStyle Hidden }
+          }
