@@ -67,11 +67,12 @@ The application and installer share the included project icon.
 
 ## Download and distribution status
 
-1.1.2 is a source pre-release. The installer now uses Simplified Chinese and
+1.1.2 is a [pre-release](https://github.com/wuzhimingking-arch/FrameMark/releases/tag/v1.1.2). The installer now uses Simplified Chinese and
 machine-wide installation, defaulting to the system's 64-bit `Program Files\framemark`.
 Administrator approval is required. A detected old per-user installation must be
 uninstalled without deleting user data first; automatic cross-scope migration is not implemented.
-Administrator install/upgrade/uninstall acceptance remains pending. The website's stable download stays at 1.1.1.
+Isolated Windows install/reinstall, shortcut launches, uninstall and data-retention checks passed.
+The wizard has not been manually reviewed page by page. Website CMS authentication is unavailable; its stable download stays at 1.1.1.
 
 Download the Windows installer and complete corresponding third-party source from
 [the 1.1.1 release](https://github.com/wuzhimingking-arch/FrameMark/releases/tag/v1.1.1).

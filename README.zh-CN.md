@@ -61,9 +61,10 @@
 
 ## 下载与发布状态
 
-1.1.2 为源码预发布；中文机器级安装默认系统 64 位 `Program Files\framemark`，需要管理员授权。
+1.1.2 为[预发布](https://github.com/wuzhimingking-arch/FrameMark/releases/tag/v1.1.2)；中文机器级安装默认系统 64 位 `Program Files\framemark`，需要管理员授权。
 旧版当前用户安装需先卸载程序且不要删除用户数据；不自动跨权限迁移。
-本轮尚未完成管理员安装/升级/卸载验收，官网稳定下载仍为 1.1.1。
+隔离 Windows 的安装、重装、多个入口启动、卸载及数据保留检查通过；中文向导尚未逐页人工验收。
+官网后台认证暂不可用，官网稳定下载仍为 1.1.1。
 
 Windows 安装包与完整对应第三方源码见 [1.1.1 Release](https://github.com/wuzhimingking-arch/FrameMark/releases/tag/v1.1.1)。安装包未进行数字签名，Windows/SmartScreen 可能提示未知发布者。
 
